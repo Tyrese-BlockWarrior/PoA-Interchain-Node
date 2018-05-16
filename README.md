@@ -2,6 +2,11 @@
 
 The interchain node allows ethereum users to transfer funds between a main chain and a side chain using multisig wallets.
 
+It is composed of two programs:
+
+ * icn-mc2sc: Watches the main chain and react on the side chain
+ * icn-sc2mc: Watches the side chain and react on the main chain (Unimplemented yet)
+
 ## Dependencies
 
  * solc
@@ -41,6 +46,12 @@ Wait 10 seconds between each call
 ## Deploy the multisig wallet on both chains
 
     make mainchain_wallet sidechain_wallet
+
+## Run the interchain node
+
+For each sealer:
+
+    go run cmd/icn-mc2sc/main.go -keyjson=sidechain/keystore/<your_key_json> -password=dummy -mainchainendpoint=mainchain/geth.ipc -sidechainendpoint=sidechain/geth.ipc -mainchainwallet=`cat mainchain/wallet` -sidechainwallet=`cat sidechain/wallet`
 
 ## Sending ether to arbitrary addresses offchain
 
