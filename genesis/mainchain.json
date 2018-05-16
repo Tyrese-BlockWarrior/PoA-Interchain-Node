@@ -1,0 +1,36 @@
+{
+  "config": {
+    "chainId": 907,
+    "homesteadBlock": 1,
+    "eip150Block": 2,
+    "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "eip155Block": 3,
+    "eip158Block": 3,
+    "byzantiumBlock": 4,
+    "ethash": {}
+  },
+  "nonce": "0x0",
+  "timestamp": "0x5ab4bd0c",
+  "extraData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "gasLimit": "0x47b760",
+  "difficulty": "0x80000",
+  "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "coinbase": "0x0000000000000000000000000000000000000000",
+  "alloc": {
+    "@@MINER@@": {
+      "balance": "0x3635C9ADC5DEA00000"
+    },
+    "@@WALLET@@": {
+      "balance": "0x3635C9ADC5DEA00000"
+    },
+    "@@SEALER1@@": {
+      "balance": "0x3635C9ADC5DEA00000"
+    },
+    "@@SEALER2@@": {
+      "balance": "0x3635C9ADC5DEA00000"
+    }
+  },
+  "number": "0x0",
+  "gasUsed": "0x0",
+  "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+}

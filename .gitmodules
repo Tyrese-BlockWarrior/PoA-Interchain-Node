@@ -1,0 +1,3 @@
+[submodule "interchain-node-contracts"]
+	path = interchain-node-contracts
+	url = git@github.com:WeTrustPlatform/interchain-node-contracts.git
