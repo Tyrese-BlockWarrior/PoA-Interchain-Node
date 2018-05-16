@@ -58,6 +58,9 @@ func main() {
 
 	// Attach the wallet
 	sc, err := sidechain.NewSideChain(sideChainWalletAddress, sideChainClient)
+	if err != nil {
+		log.Fatal("Couldn't instanciate the contract:", err)
+	}
 
 	// Get the latest block
 	latestBlock, err := mainChainClient.BlockByNumber(ctx, nil)

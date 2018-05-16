@@ -14,8 +14,13 @@ import (
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
+
+type depositable interface {
+	Deposit(opts *bind.TransactOpts, to common.Address) (*types.Transaction, error)
+}
 
 func main() {
 	// Command line flags
@@ -57,20 +62,20 @@ func main() {
 	auth.Value = v
 
 	// Attach the wallet and submit the transaction
+	var wallet depositable
 	if *mainChainPtr {
-		wallet, err := mainchain.NewMainChain(walletAddress, client)
-		wtx, err := wallet.Deposit(auth, common.HexToAddress(*receiver))
-		if err != nil {
-			log.Printf("SubmitTransaction error: %v", err)
-		}
-		log.Printf("Transaction sent: %v", wtx)
+		wallet, err = mainchain.NewMainChain(walletAddress, client)
+	} else if *sideChainPtr {
+		wallet, err = sidechain.NewSideChain(walletAddress, client)
 	}
-	if *sideChainPtr {
-		wallet, err := sidechain.NewSideChain(walletAddress, client)
-		wtx, err := wallet.Deposit(auth, common.HexToAddress(*receiver))
-		if err != nil {
-			log.Printf("SubmitTransaction error: %v", err)
-		}
-		log.Printf("Transaction sent: %v", wtx)
+
+	if err != nil {
+		log.Fatal("Couldn't instanciate the contract:", err)
 	}
+
+	wtx, err := wallet.Deposit(auth, common.HexToAddress(*receiver))
+	if err != nil {
+		log.Printf("SubmitTransaction error: %v", err)
+	}
+	log.Printf("Transaction sent: %v", wtx)
 }
