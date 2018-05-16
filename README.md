@@ -59,7 +59,7 @@ Our multisig wallets have a function called `deposit` which allows you to transf
 
 Instead of paying to the wallet address, you call the `deposit` method using geth console or our utility program `icn-deposit.go`:
 
-    go run cmd/icn-deposit/main.go -mainchain -keyjson=mainchain/keystore/<your_key_json> -password=dummy -endpoint=mainchain/geth.ipc -wallet=`cat mainchain/miner` -receiver=`cat sidechain/sealer` -value="25000000000000000000"
+    go run cmd/icn-deposit/main.go -mainchain -keyjson=mainchain/keystore/<your_key_json> -password=dummy -endpoint=mainchain/geth.ipc -wallet=`cat mainchain/wallet` -receiver=`cat sidechain/sealer` -value="25000000000000000000"
 
 Usage:
 
