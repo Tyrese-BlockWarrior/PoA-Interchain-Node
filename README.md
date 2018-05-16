@@ -44,7 +44,7 @@ Wait 10 seconds between each call
 
 ## Sending ether to arbitrary addresses offchain
 
-The multisig wallet has a function called `deposit` which allows you to transfer ether from your address on the chain A to a receiver on the chain B.
+Our multisig wallets have a function called `deposit` which allows you to transfer ether from your address on the chain A to a receiver on the chain B.
 
 Instead of paying to the wallet address, you call the `deposit` method using geth console or our utility program `icn-deposit.go`:
 
@@ -58,13 +58,13 @@ Usage:
   -keyjson string
     	Path to the JSON private key file of the user
   -mainchain
-    	Deploy the main chain wallet
+    	Target the main chain wallet
   -password string
     	Passphrase needed to unlock the user's JSON key
   -receiver string
     	Ethereum address of the receiver on the target chain
   -sidechain
-    	Deploy the side chain wallet
+    	Target the side chain wallet
   -value string
     	Value (wei) to transfer to the receiver
   -wallet string
