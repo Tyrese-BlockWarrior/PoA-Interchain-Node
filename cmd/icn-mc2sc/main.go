@@ -18,6 +18,11 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+//go:generate mkdir -p ../../bind/mainchain/
+//go:generate mkdir -p ../../bind/sidechain/
+//go:generate abigen --sol ../../interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out ../../bind/mainchain/main.go
+//go:generate abigen --sol ../../interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out ../../bind/sidechain/main.go
+
 func main() {
 	// Command line flags
 	keyJSONPath := flag.String("keyjson", "", "Path to the JSON private key file of the sealer")
