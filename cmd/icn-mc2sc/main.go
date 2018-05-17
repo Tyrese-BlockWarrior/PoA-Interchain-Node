@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/WeTrustPlatform/interchain-node"
 	"github.com/WeTrustPlatform/interchain-node/bind/mainchain"
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -19,38 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-//go:generate mkdir -p ../../bind/mainchain/
-//go:generate mkdir -p ../../bind/sidechain/
-//go:generate abigen --sol ../../interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out ../../bind/mainchain/main.go
-//go:generate abigen --sol ../../interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out ../../bind/sidechain/main.go
-
-type depositEvent struct {
-	Sender   common.Address
-	Receiver common.Address
-	Value    *big.Int
-}
-
-// getDepositEvent loops over the logs and returns the depositEvent
-func getDepositEvent(abi abi.ABI, logs []*types.Log) depositEvent {
-
-	var depositEvent depositEvent
-
-	// There should be only one deposit event in the logs
-	for _, l := range logs {
-		err := abi.Unpack(&depositEvent, "Deposit", l.Data)
-		if err != nil {
-			log.Printf("Event log unpack error: %v", err)
-			continue
-		}
-
-		// Indexed attributes go in l.Topics instead of l.Data
-		depositEvent.Sender = common.BytesToAddress(l.Topics[1].Bytes())
-		depositEvent.Receiver = common.BytesToAddress(l.Topics[2].Bytes())
-	}
-
-	return depositEvent
-}
-
 func proceedTransaction(
 	ctx context.Context,
 	auth *bind.TransactOpts,
@@ -58,31 +27,17 @@ func proceedTransaction(
 	sc *sidechain.SideChain,
 	tx *types.Transaction,
 ) error {
-	// Get the transaction receipt
-	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
-	if err != nil {
-		return errors.New("Can't get transaction receipt: " + err.Error())
-	}
-
-	log.Printf("Receipt: %v", receipt)
-
-	if receipt.Status == types.ReceiptStatusFailed {
-		return errors.New("Receipt status is ReceiptStatusFailed")
-	}
-
 	// Decode event logs
 	abi, _ := abi.JSON(strings.NewReader(mainchain.MainChainABI))
-	logs := receipt.Logs
+	logs, err := icn.GetLogs(ctx, client, tx)
+	if err != nil {
+		return err
+	}
+	deposit := icn.GetDepositEvent(abi, logs)
 
-	deposit := getDepositEvent(abi, logs)
-
-	if deposit == (depositEvent{}) {
+	if deposit == (icn.DepositEvent{}) {
 		return errors.New("No deposit event")
 	}
-
-	log.Printf("Sender: %v", deposit.Sender.Hex())
-	log.Printf("Receiver: %v", deposit.Receiver.Hex())
-	log.Printf("Value: %v", deposit.Value)
 
 	log.Println("Mirroring transaction")
 
@@ -114,7 +69,7 @@ func main() {
 	sideChainWalletAddress := common.HexToAddress(*sideChainWallet)
 	mainChainWalletAddress := common.HexToAddress(*mainChainWallet)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	// Open the account key file

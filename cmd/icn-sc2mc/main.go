@@ -10,70 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/WeTrustPlatform/interchain-node/bind/mainchain"
+	"github.com/WeTrustPlatform/interchain-node"
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto/sha3"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
-
-//go:generate mkdir -p ../../bind/mainchain/
-//go:generate mkdir -p ../../bind/sidechain/
-//go:generate abigen --sol ../../interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out ../../bind/mainchain/main.go
-//go:generate abigen --sol ../../interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out ../../bind/sidechain/main.go
-
-type depositEvent struct {
-	Sender   common.Address
-	Receiver common.Address
-	Value    *big.Int
-}
-
-// getDepositEvent loops over the logs and returns the depositEvent
-func getDepositEvent(abi abi.ABI, logs []*types.Log) depositEvent {
-
-	var depositEvent depositEvent
-
-	// There should be only one deposit event in the logs
-	for _, l := range logs {
-		err := abi.Unpack(&depositEvent, "Deposit", l.Data)
-		if err != nil {
-			log.Printf("Event log unpack error: %v", err)
-			continue
-		}
-
-		// Indexed attributes go in l.Topics instead of l.Data
-		depositEvent.Sender = common.BytesToAddress(l.Topics[1].Bytes())
-		depositEvent.Receiver = common.BytesToAddress(l.Topics[2].Bytes())
-	}
-
-	return depositEvent
-}
-
-// msgHash returns the sha3 sum of txHash, destination, value, data and version
-func msgHash(txHash [32]byte, destination common.Address, value *big.Int, data []byte, version uint8) [32]byte {
-	var msgHash [32]byte
-
-	sha3 := sha3.NewKeccak256()
-	sha3.Reset()
-	sha3.Write(txHash[:])
-	sha3.Write(destination[:])
-	sha3.Write(value.Bytes())
-	sha3.Write(data)
-	sha3.Write([]byte{version})
-
-	copy(msgHash[:], sha3.Sum(nil))
-
-	return msgHash
-}
-
-func toByte32(in []byte) (out [32]byte) {
-	copy(out[:], in)
-	return out
-}
 
 func proceedTransaction(
 	ctx context.Context,
@@ -84,61 +29,30 @@ func proceedTransaction(
 	tx *types.Transaction,
 	key *keystore.Key,
 ) error {
-	// Get the transaction receipt
-	receipt, err := sidechainClient.TransactionReceipt(ctx, tx.Hash())
-	if err != nil {
-		return errors.New("Can't get transaction receipt: " + err.Error())
-	}
-
-	log.Printf("Receipt: %v", receipt)
-
-	if receipt.Status == types.ReceiptStatusFailed {
-		return errors.New("Receipt status is ReceiptStatusFailed")
-	}
-
 	// Decode event logs
-	abi, _ := abi.JSON(strings.NewReader(mainchain.MainChainABI))
-	logs := receipt.Logs
+	abi, _ := abi.JSON(strings.NewReader(sidechain.SideChainABI))
+	logs, err := icn.GetLogs(ctx, sidechainClient, tx)
+	if err != nil {
+		return err
+	}
+	deposit := icn.GetDepositEvent(abi, logs)
 
-	deposit := getDepositEvent(abi, logs)
-
-	if deposit == (depositEvent{}) {
+	if deposit == (icn.DepositEvent{}) {
 		return errors.New("No deposit event")
 	}
-
-	log.Printf("Sender: %v", deposit.Sender.Hex())
-	log.Printf("Receiver: %v", deposit.Receiver.Hex())
-	log.Printf("Value: %v", deposit.Value)
 
 	log.Println("Mirroring transaction")
 
 	// Submit the transaction
-	txHash := toByte32(tx.Hash().Bytes())
 	data := []byte(`test`)
-
-	msgHash := msgHash(txHash, deposit.Receiver, tx.Value(), data, 1)
-
-	nonce, err := mainchainClient.NonceAt(ctx, auth.From, nil)
+	txHash := icn.ToByte32(tx.Hash().Bytes())
+	msgHash := icn.MsgHash(txHash, deposit.Receiver, tx.Value(), data, 1)
+	v, r, s, err := icn.GetRawSignature(ctx, auth, tx.Value(), key, deposit.Receiver, mainchainClient, data)
 	if err != nil {
-		return errors.New("NonceAt failed: " + err.Error())
+		return errors.New("GetRawSignature failed: " + err.Error())
 	}
 
-	var gasLimit uint64 = 100000
-	gasPrice := big.NewInt(20000000000) // 20 gwei
-	newTx := types.NewTransaction(nonce, deposit.Receiver, tx.Value(), gasLimit, gasPrice, data)
-
-	signer := types.HomesteadSigner{}
-
-	signedTx, err := types.SignTx(newTx, signer, key.PrivateKey)
-	if err != nil {
-		return errors.New("SignTx failed: " + err.Error())
-	}
-
-	v, r, s := signedTx.RawSignatureValues()
-
-	wtx, err := sc.SubmitSignatureMC(
-		auth, msgHash, txHash, deposit.Receiver, tx.Value(), data,
-		uint8(v.Uint64()), toByte32(r.Bytes()), toByte32(s.Bytes()))
+	wtx, err := sc.SubmitSignatureMC(auth, msgHash, txHash, deposit.Receiver, tx.Value(), data, v, r, s)
 	if err != nil {
 		return errors.New("SubmitSignatureMC failed: " + err.Error())
 	}
@@ -165,7 +79,7 @@ func main() {
 	sideChainWalletAddress := common.HexToAddress(*sideChainWallet)
 	//mainChainWalletAddress := common.HexToAddress(*mainChainWallet)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	// Open the account key file

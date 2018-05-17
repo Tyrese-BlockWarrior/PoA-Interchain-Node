@@ -75,7 +75,7 @@ func main() {
 
 	wtx, err := wallet.Deposit(auth, common.HexToAddress(*receiver))
 	if err != nil {
-		log.Printf("SubmitTransaction error: %v", err)
+		log.Printf("Deposit error: %v", err)
 	}
 	log.Printf("Transaction sent: %v", wtx)
 }
