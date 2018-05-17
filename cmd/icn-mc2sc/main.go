@@ -76,6 +76,10 @@ func proceedTransaction(
 
 	deposit := getDepositEvent(abi, logs)
 
+	if deposit == (depositEvent{}) {
+		return errors.New("No deposit event")
+	}
+
 	log.Printf("Sender: %v", deposit.Sender.Hex())
 	log.Printf("Receiver: %v", deposit.Receiver.Hex())
 	log.Printf("Value: %v", deposit.Value)
@@ -155,7 +159,7 @@ func main() {
 		for j, tx := range txs {
 			to := tx.To()
 
-			// If money is sent to the wallet address, mirror the transaction on the other chain
+			// If money is sent to the main chain wallet address, mirror the transaction on the side chain
 			if to != nil && *to == mainChainWalletAddress {
 				err := proceedTransaction(ctx, auth, mainChainClient, sc, tx)
 				if err != nil {
