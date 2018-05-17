@@ -110,7 +110,7 @@ func main() {
 	sideChainWalletAddress := common.HexToAddress(*sideChainWallet)
 	mainChainWalletAddress := common.HexToAddress(*mainChainWallet)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Open the account key file
