@@ -67,7 +67,7 @@ func proceedTransaction(
 	log.Printf("Receipt: %v", receipt)
 
 	if receipt.Status == types.ReceiptStatusFailed {
-		return errors.New("Receipt status is ReceiptStatusFailed: " + tx.String())
+		return errors.New("Receipt status is ReceiptStatusFailed")
 	}
 
 	// Decode event logs
