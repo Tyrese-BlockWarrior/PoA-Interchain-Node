@@ -14,6 +14,7 @@ import (
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/sha3"
@@ -69,15 +70,22 @@ func msgHash(txHash [32]byte, destination common.Address, value *big.Int, data [
 	return msgHash
 }
 
+func toByte32(in []byte) (out [32]byte) {
+	copy(out[:], in)
+	return out
+}
+
 func proceedTransaction(
 	ctx context.Context,
 	auth *bind.TransactOpts,
-	client *ethclient.Client,
+	sidechainClient *ethclient.Client,
+	mainchainClient *ethclient.Client,
 	sc *sidechain.SideChain,
 	tx *types.Transaction,
+	key *keystore.Key,
 ) error {
 	// Get the transaction receipt
-	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
+	receipt, err := sidechainClient.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
 		return errors.New("Can't get transaction receipt: " + err.Error())
 	}
@@ -85,7 +93,7 @@ func proceedTransaction(
 	log.Printf("Receipt: %v", receipt)
 
 	if receipt.Status == types.ReceiptStatusFailed {
-		return errors.New("Receipt status is ReceiptStatusFailed: " + tx.String())
+		return errors.New("Receipt status is ReceiptStatusFailed")
 	}
 
 	// Decode event logs
@@ -105,16 +113,32 @@ func proceedTransaction(
 	log.Println("Mirroring transaction")
 
 	// Submit the transaction
-	var txHash [32]byte
-	copy(txHash[:], tx.Hash().Bytes())
-	var v uint8
-	var r [32]byte
-	var s [32]byte
+	txHash := toByte32(tx.Hash().Bytes())
 	data := []byte(`test`)
 
 	msgHash := msgHash(txHash, deposit.Receiver, tx.Value(), data, 1)
 
-	wtx, err := sc.SubmitSignatureMC(auth, msgHash, txHash, deposit.Receiver, tx.Value(), data, v, r, s)
+	nonce, err := mainchainClient.NonceAt(ctx, auth.From, nil)
+	if err != nil {
+		return errors.New("NonceAt failed: " + err.Error())
+	}
+
+	var gasLimit uint64 = 100000
+	gasPrice := big.NewInt(20000000000) // 20 gwei
+	newTx := types.NewTransaction(nonce, deposit.Receiver, tx.Value(), gasLimit, gasPrice, data)
+
+	signer := types.HomesteadSigner{}
+
+	signedTx, err := types.SignTx(newTx, signer, key.PrivateKey)
+	if err != nil {
+		return errors.New("SignTx failed: " + err.Error())
+	}
+
+	v, r, s := signedTx.RawSignatureValues()
+
+	wtx, err := sc.SubmitSignatureMC(
+		auth, msgHash, txHash, deposit.Receiver, tx.Value(), data,
+		uint8(v.Uint64()), toByte32(r.Bytes()), toByte32(s.Bytes()))
 	if err != nil {
 		return errors.New("SubmitSignatureMC failed: " + err.Error())
 	}
@@ -127,7 +151,7 @@ func main() {
 	// Command line flags
 	keyJSONPath := flag.String("keyjson", "", "Path to the JSON private key file of the sealer")
 	password := flag.String("password", "", "Passphrase needed to unlock the sealer's JSON key")
-	//mainChainEndpoint := flag.String("mainchainendpoint", "", "URL or path of the main chain endpoint")
+	mainChainEndpoint := flag.String("mainchainendpoint", "", "URL or path of the main chain endpoint")
 	sideChainEndpoint := flag.String("sidechainendpoint", "", "URL or path of the side chain endpoint")
 	//mainChainWallet := flag.String("mainchainwallet", "", "Ethereum address of the multisig wallet on the main chain")
 	sideChainWallet := flag.String("sidechainwallet", "", "Ethereum address of the multisig wallet on the side chain")
@@ -135,7 +159,7 @@ func main() {
 	flag.Parse()
 
 	// Connect to both chains
-	//mainChainClient, _ := ethclient.Dial(*mainChainEndpoint)
+	mainChainClient, _ := ethclient.Dial(*mainChainEndpoint)
 	sideChainClient, _ := ethclient.Dial(*sideChainEndpoint)
 
 	sideChainWalletAddress := common.HexToAddress(*sideChainWallet)
@@ -155,6 +179,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create authorized transactor: %v", err)
 	}
+
+	key, _ := keystore.DecryptKey(keyJSON, *password)
 
 	// Attach the wallet
 	sc, err := sidechain.NewSideChain(sideChainWalletAddress, sideChainClient)
@@ -188,7 +214,7 @@ func main() {
 
 			// If money is sent to the side chain wallet address, mirror the transaction on the main chain
 			if to != nil && *to == sideChainWalletAddress {
-				err := proceedTransaction(ctx, auth, sideChainClient, sc, tx)
+				err := proceedTransaction(ctx, auth, sideChainClient, mainChainClient, sc, tx, key)
 				if err != nil {
 					log.Println(err)
 					continue
