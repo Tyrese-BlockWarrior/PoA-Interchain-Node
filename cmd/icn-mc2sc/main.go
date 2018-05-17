@@ -23,6 +23,33 @@ import (
 //go:generate abigen --sol ../../interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out ../../bind/mainchain/main.go
 //go:generate abigen --sol ../../interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out ../../bind/sidechain/main.go
 
+type depositEvent struct {
+	Sender   common.Address
+	Receiver common.Address
+	Value    *big.Int
+}
+
+// getDepositEvent loops over the logs and returns the depositEvent
+func getDepositEvent(abi abi.ABI, logs []*types.Log) depositEvent {
+
+	var depositEvent depositEvent
+
+	// There should be only one deposit event in the logs
+	for _, l := range logs {
+		err := abi.Unpack(&depositEvent, "Deposit", l.Data)
+		if err != nil {
+			log.Printf("Event log unpack error: %v", err)
+			continue
+		}
+
+		// Indexed attributes go in l.Topics instead of l.Data
+		depositEvent.Sender = common.BytesToAddress(l.Topics[1].Bytes())
+		depositEvent.Receiver = common.BytesToAddress(l.Topics[2].Bytes())
+	}
+
+	return depositEvent
+}
+
 func main() {
 	// Command line flags
 	keyJSONPath := flag.String("keyjson", "", "Path to the JSON private key file of the sealer")
@@ -110,32 +137,16 @@ func main() {
 				abi, _ := abi.JSON(strings.NewReader(mainchain.MainChainABI))
 				logs := receipt.Logs
 
-				var depositEvent struct {
-					Sender   common.Address
-					Receiver common.Address
-					Value    *big.Int
-				}
+				deposit := getDepositEvent(abi, logs)
 
-				for _, l := range logs {
-					err := abi.Unpack(&depositEvent, "Deposit", l.Data)
-					if err != nil {
-						log.Printf("Event log unpack error: %v", err)
-						continue
-					}
-
-					// Indexed attributes go in l.Topics instead of l.Data
-					depositEvent.Sender = common.BytesToAddress(l.Topics[1].Bytes())
-					depositEvent.Receiver = common.BytesToAddress(l.Topics[2].Bytes())
-
-					log.Printf("sender: %v", depositEvent.Sender.Hex())
-					log.Printf("receiver: %v", depositEvent.Receiver.Hex())
-					log.Printf("value: %v", depositEvent.Value)
-				}
+				log.Printf("Sender: %v", deposit.Sender.Hex())
+				log.Printf("Receiver: %v", deposit.Receiver.Hex())
+				log.Printf("Value: %v", deposit.Value)
 
 				log.Println("Mirroring transaction")
 
 				// Submit the transaction
-				wtx, err := sc.SubmitTransactionSC(auth, tx.Hash(), depositEvent.Receiver, tx.Value(), []byte(`foo`))
+				wtx, err := sc.SubmitTransactionSC(auth, tx.Hash(), deposit.Receiver, tx.Value(), []byte(`foo`))
 				if err != nil {
 					log.Printf("Deposit error: %v", err)
 					continue
