@@ -139,12 +139,8 @@ func main() {
 
 	log.Printf("Latest block: %v", latestBlock.Number())
 
-	start := big.NewInt(0)
-	end := latestBlock.Number()
-	one := big.NewInt(1)
-
 	// Loop over the blocks
-	for i := start; i.Cmp(end) <= 0; i.Add(i, one) {
+	for i := big.NewInt(0); i.Cmp(latestBlock.Number()) <= 0; i.Add(i, big.NewInt(1)) {
 
 		// Get the block details
 		block, err := mainChainClient.BlockByNumber(ctx, i)
