@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"io/ioutil"
 	"log"
@@ -48,6 +49,47 @@ func getDepositEvent(abi abi.ABI, logs []*types.Log) depositEvent {
 	}
 
 	return depositEvent
+}
+
+func proceedTransaction(
+	ctx context.Context,
+	auth *bind.TransactOpts,
+	client *ethclient.Client,
+	sc *sidechain.SideChain,
+	tx *types.Transaction,
+) error {
+	// Get the transaction receipt
+	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
+	if err != nil {
+		return errors.New("Can't get transaction receipt: " + err.Error())
+	}
+
+	log.Printf("Receipt: %v", receipt)
+
+	if receipt.Status == types.ReceiptStatusFailed {
+		return errors.New("Receipt status is ReceiptStatusFailed: " + tx.String())
+	}
+
+	// Decode event logs
+	abi, _ := abi.JSON(strings.NewReader(mainchain.MainChainABI))
+	logs := receipt.Logs
+
+	deposit := getDepositEvent(abi, logs)
+
+	log.Printf("Sender: %v", deposit.Sender.Hex())
+	log.Printf("Receiver: %v", deposit.Receiver.Hex())
+	log.Printf("Value: %v", deposit.Value)
+
+	log.Println("Mirroring transaction")
+
+	// Submit the transaction
+	wtx, err := sc.SubmitTransactionSC(auth, tx.Hash(), deposit.Receiver, tx.Value(), []byte(`foo`))
+	if err != nil {
+		return errors.New("SubmitTransactionSC failed: " + err.Error())
+	}
+
+	log.Printf("Transaction mirrored: %v", wtx)
+	return nil
 }
 
 func main() {
@@ -119,40 +161,11 @@ func main() {
 
 			// If money is sent to the wallet address, mirror the transaction on the other chain
 			if to != nil && *to == mainChainWalletAddress {
-				// Check that the transaction was successful
-				receipt, err := mainChainClient.TransactionReceipt(ctx, tx.Hash())
+				err := proceedTransaction(ctx, auth, mainChainClient, sc, tx)
 				if err != nil {
-					log.Printf("Can't get transaction receipt: %v", err)
+					log.Println(err)
 					continue
 				}
-
-				log.Printf("Receipt: %v", receipt)
-
-				if receipt.Status == types.ReceiptStatusFailed {
-					log.Printf("Transaction failed %v", tx)
-					continue
-				}
-
-				// Decode event logs
-				abi, _ := abi.JSON(strings.NewReader(mainchain.MainChainABI))
-				logs := receipt.Logs
-
-				deposit := getDepositEvent(abi, logs)
-
-				log.Printf("Sender: %v", deposit.Sender.Hex())
-				log.Printf("Receiver: %v", deposit.Receiver.Hex())
-				log.Printf("Value: %v", deposit.Value)
-
-				log.Println("Mirroring transaction")
-
-				// Submit the transaction
-				wtx, err := sc.SubmitTransactionSC(auth, tx.Hash(), deposit.Receiver, tx.Value(), []byte(`foo`))
-				if err != nil {
-					log.Printf("Deposit error: %v", err)
-					continue
-				}
-
-				log.Printf("Transaction mirrored: %v", wtx)
 			}
 
 			log.Printf("Transaction proceeded in block %v: %v\n", i, j)
