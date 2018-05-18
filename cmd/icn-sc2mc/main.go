@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -46,10 +47,15 @@ func proceedTransaction(
 	// Submit the transaction
 	data := []byte(`foo`)
 	msgHash := icn.MsgHash(tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
-	v, r, s, err := icn.GetRawSignature(ctx, auth, tx.Value(), key, deposit.Receiver, mainchainClient, data)
+
+	sig, err := crypto.Sign(msgHash.Bytes(), key.PrivateKey)
 	if err != nil {
-		return errors.New("GetRawSignature failed: " + err.Error())
+		return errors.New("Sign failed: " + err.Error())
 	}
+
+	r := common.BytesToHash(sig[0:32])
+	s := common.BytesToHash(sig[32:64])
+	v := uint8(sig[64:65][0])
 
 	wtx, err := sc.SubmitSignatureMC(auth, msgHash, tx.Hash(), deposit.Receiver, tx.Value(), data, v, r, s)
 	if err != nil {
