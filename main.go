@@ -15,10 +15,10 @@ import (
 	"github.com/miguelmota/go-solidity-sha3"
 )
 
-//go:generate mkdir -p ../../bind/mainchain/
-//go:generate mkdir -p ../../bind/sidechain/
-//go:generate abigen --sol ../../interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out ../../bind/mainchain/main.go
-//go:generate abigen --sol ../../interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out ../../bind/sidechain/main.go
+//go:generate mkdir -p bind/mainchain/
+//go:generate mkdir -p bind/sidechain/
+//go:generate abigen --sol interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out bind/mainchain/main.go
+//go:generate abigen --sol interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out bind/sidechain/main.go
 
 // MsgHash returns the sha3 sum of txHash, destination, value, data and version
 func MsgHash(txHash common.Hash, destination common.Address, value *big.Int, data []byte, version uint8) common.Hash {
