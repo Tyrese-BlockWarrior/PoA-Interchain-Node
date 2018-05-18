@@ -21,6 +21,7 @@ before_script:
   - go get honnef.co/go/tools/cmd/megacheck
   - go get github.com/fzipp/gocyclo
   - go get github.com/ethereum/go-ethereum
+  - go get github.com/miguelmota/go-solidity-sha3
   - go generate ./...
 
 script:
