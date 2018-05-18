@@ -44,15 +44,14 @@ func proceedTransaction(
 	log.Println("Mirroring transaction")
 
 	// Submit the transaction
-	data := []byte(`test`)
-	txHash := icn.ToByte32(tx.Hash().Bytes())
-	msgHash := icn.MsgHash(txHash, deposit.Receiver, tx.Value(), data, 1)
+	data := []byte(`foo`)
+	msgHash := icn.MsgHash(tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
 	v, r, s, err := icn.GetRawSignature(ctx, auth, tx.Value(), key, deposit.Receiver, mainchainClient, data)
 	if err != nil {
 		return errors.New("GetRawSignature failed: " + err.Error())
 	}
 
-	wtx, err := sc.SubmitSignatureMC(auth, msgHash, txHash, deposit.Receiver, tx.Value(), data, v, r, s)
+	wtx, err := sc.SubmitSignatureMC(auth, msgHash, tx.Hash(), deposit.Receiver, tx.Value(), data, v, r, s)
 	if err != nil {
 		return errors.New("SubmitSignatureMC failed: " + err.Error())
 	}
@@ -131,11 +130,10 @@ func main() {
 				err := proceedTransaction(ctx, auth, sideChainClient, mainChainClient, sc, tx, key)
 				if err != nil {
 					log.Println(err)
-					continue
+				} else {
+					log.Printf("Transaction proceeded in block %v: %v\n", i, j)
 				}
 			}
-
-			log.Printf("Transaction proceeded in block %v: %v\n", i, j)
 		}
 
 		//log.Println("Block proceeded:", i)

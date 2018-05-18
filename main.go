@@ -11,8 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto/sha3"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/miguelmota/go-solidity-sha3"
 )
 
 //go:generate mkdir -p ../../bind/mainchain/
@@ -21,18 +21,18 @@ import (
 //go:generate abigen --sol ../../interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out ../../bind/sidechain/main.go
 
 // MsgHash returns the sha3 sum of txHash, destination, value, data and version
-func MsgHash(txHash [32]byte, destination common.Address, value *big.Int, data []byte, version uint8) [32]byte {
-	var msgHash [32]byte
+func MsgHash(txHash common.Hash, destination common.Address, value *big.Int, data []byte, version uint8) common.Hash {
+	var msgHash common.Hash
 
-	sha3 := sha3.NewKeccak256()
-	sha3.Reset()
-	sha3.Write(txHash[:])
-	sha3.Write(destination[:])
-	sha3.Write(value.Bytes())
-	sha3.Write(data)
-	sha3.Write([]byte{version})
+	hash := solsha3.SoliditySHA3(
+		solsha3.Bytes32(txHash.Str()),
+		solsha3.Address(destination.String()),
+		solsha3.Int256(value),
+		solsha3.String(string(data[:])),
+		solsha3.Uint8(version),
+	)
 
-	copy(msgHash[:], sha3.Sum(nil))
+	msgHash.SetBytes(hash)
 
 	return msgHash
 }

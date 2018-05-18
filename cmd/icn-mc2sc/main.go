@@ -119,11 +119,10 @@ func main() {
 				err := proceedTransaction(ctx, auth, mainChainClient, sc, tx)
 				if err != nil {
 					log.Println(err)
-					continue
+				} else {
+					log.Printf("Transaction proceeded in block %v: %v\n", i, j)
 				}
 			}
-
-			log.Printf("Transaction proceeded in block %v: %v\n", i, j)
 		}
 
 		//log.Println("Block proceeded:", i)
