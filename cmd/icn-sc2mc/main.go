@@ -46,7 +46,7 @@ func proceedTransaction(
 	log.Println("Mirroring transaction")
 
 	// Submit the transaction
-	data := []byte(`foo`)
+	var data []byte
 	msgHash := icn.MsgHash(sideChainWalletAddress, tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
 
 	sig, err := crypto.Sign(msgHash.Bytes(), key.PrivateKey)
