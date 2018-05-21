@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/miguelmota/go-solidity-sha3"
 )
 
@@ -89,8 +88,13 @@ func ParseSignature(sig []byte) (v uint8, r, s common.Hash) {
 	return
 }
 
+// HasTransactionReceipt allows GetLogs to take either *ethclient.Client or *backends.SimulatedBackend as argument
+type HasTransactionReceipt interface {
+	TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error)
+}
+
 // GetLogs returns the logs for a transaction
-func GetLogs(ctx context.Context, client *ethclient.Client, tx *types.Transaction) ([]*types.Log, error) {
+func GetLogs(ctx context.Context, client HasTransactionReceipt, tx *types.Transaction) ([]*types.Log, error) {
 	// Get the transaction receipt
 	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
