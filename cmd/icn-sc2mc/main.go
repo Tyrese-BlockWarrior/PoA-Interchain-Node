@@ -22,6 +22,7 @@ import (
 )
 
 func proceedTransaction(
+	sideChainWalletAddress common.Address,
 	ctx context.Context,
 	auth *bind.TransactOpts,
 	sidechainClient *ethclient.Client,
@@ -46,7 +47,7 @@ func proceedTransaction(
 
 	// Submit the transaction
 	data := []byte(`foo`)
-	msgHash := icn.MsgHash(tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
+	msgHash := icn.MsgHash(sideChainWalletAddress, tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
 
 	sig, err := crypto.Sign(msgHash.Bytes(), key.PrivateKey)
 	if err != nil {
@@ -133,7 +134,7 @@ func main() {
 
 			// If money is sent to the side chain wallet address, mirror the transaction on the main chain
 			if to != nil && *to == sideChainWalletAddress {
-				err := proceedTransaction(ctx, auth, sideChainClient, mainChainClient, sc, tx, key)
+				err := proceedTransaction(sideChainWalletAddress, ctx, auth, sideChainClient, mainChainClient, sc, tx, key)
 				if err != nil {
 					log.Println(err)
 				} else {
