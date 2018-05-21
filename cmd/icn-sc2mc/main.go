@@ -26,7 +26,6 @@ func proceedTransaction(
 	sideChainWalletAddress common.Address,
 	auth *bind.TransactOpts,
 	sidechainClient *ethclient.Client,
-	mainchainClient *ethclient.Client,
 	sc *sidechain.SideChain,
 	tx *types.Transaction,
 	key *keystore.Key,
@@ -71,7 +70,7 @@ func main() {
 	// Command line flags
 	keyJSONPath := flag.String("keyjson", "", "Path to the JSON private key file of the sealer")
 	password := flag.String("password", "", "Passphrase needed to unlock the sealer's JSON key")
-	mainChainEndpoint := flag.String("mainchainendpoint", "", "URL or path of the main chain endpoint")
+	//mainChainEndpoint := flag.String("mainchainendpoint", "", "URL or path of the main chain endpoint")
 	sideChainEndpoint := flag.String("sidechainendpoint", "", "URL or path of the side chain endpoint")
 	//mainChainWallet := flag.String("mainchainwallet", "", "Ethereum address of the multisig wallet on the main chain")
 	sideChainWallet := flag.String("sidechainwallet", "", "Ethereum address of the multisig wallet on the side chain")
@@ -79,7 +78,7 @@ func main() {
 	flag.Parse()
 
 	// Connect to both chains
-	mainChainClient, _ := ethclient.Dial(*mainChainEndpoint)
+	//mainChainClient, _ := ethclient.Dial(*mainChainEndpoint)
 	sideChainClient, _ := ethclient.Dial(*sideChainEndpoint)
 
 	sideChainWalletAddress := common.HexToAddress(*sideChainWallet)
@@ -95,12 +94,11 @@ func main() {
 	}
 
 	// Create a transactor
-	auth, err := bind.NewTransactor(strings.NewReader(string(keyJSON[:])), *password)
+	key, err := keystore.DecryptKey(keyJSON, *password)
 	if err != nil {
-		log.Fatalf("Failed to create authorized transactor: %v", err)
+		log.Fatalf("Failed to decrypt key: %v", err)
 	}
-
-	key, _ := keystore.DecryptKey(keyJSON, *password)
+	auth := bind.NewKeyedTransactor(key.PrivateKey)
 
 	// Attach the wallet
 	sc, err := sidechain.NewSideChain(sideChainWalletAddress, sideChainClient)
@@ -134,7 +132,7 @@ func main() {
 
 			// If money is sent to the side chain wallet address, mirror the transaction on the main chain
 			if to != nil && *to == sideChainWalletAddress {
-				err := proceedTransaction(ctx, sideChainWalletAddress, auth, sideChainClient, mainChainClient, sc, tx, key)
+				err := proceedTransaction(ctx, sideChainWalletAddress, auth, sideChainClient, sc, tx, key)
 				if err != nil {
 					log.Println(err)
 				} else {
