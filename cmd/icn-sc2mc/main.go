@@ -45,17 +45,20 @@ func proceedTransaction(
 
 	log.Println("Mirroring transaction")
 
-	// Submit the transaction
+	// Create the message hash
 	var data []byte
 	msgHash := icn.MsgHash(sideChainWalletAddress, tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
 
+	// Sign the message hash
 	sig, err := crypto.Sign(msgHash.Bytes(), key.PrivateKey)
 	if err != nil {
 		return errors.New("Sign failed: " + err.Error())
 	}
 
+	// Parse the signature
 	v, r, s := icn.ParseSignature(sig)
 
+	// Submit the signature
 	wtx, err := sc.SubmitSignatureMC(auth, tx.Hash(), deposit.Receiver, tx.Value(), data, v, r, s)
 	if err != nil {
 		return errors.New("SubmitSignatureMC failed: " + err.Error())

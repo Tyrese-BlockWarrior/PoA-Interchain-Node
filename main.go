@@ -43,12 +43,6 @@ func MsgHash(
 	return msgHash
 }
 
-// ToByte32 convers a variable lenght byte slice to a fixed lenght byte slice
-func ToByte32(in []byte) (out [32]byte) {
-	copy(out[:], in)
-	return out
-}
-
 // DepositEvent is used in unpacking events
 type DepositEvent struct {
 	Sender   common.Address
