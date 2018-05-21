@@ -18,7 +18,7 @@ import (
 //go:generate abigen --sol interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out bind/mainchain/main.go
 //go:generate abigen --sol interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out bind/sidechain/main.go
 
-// MsgHash returns the sha3 sum of contractAddress, txHash, toAddress, value, data and version
+// MsgHash returns the sha3 sum of 0x19, contractAddress, txHash, toAddress, value, data and version
 func MsgHash(
 	contractAddress common.Address,
 	txHash common.Hash,

@@ -43,8 +43,6 @@ func proceedTransaction(
 		return errors.New("No valid deposit event")
 	}
 
-	log.Println("Mirroring transaction")
-
 	// Create the message hash
 	var data []byte
 	msgHash := icn.MsgHash(sideChainWalletAddress, tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
