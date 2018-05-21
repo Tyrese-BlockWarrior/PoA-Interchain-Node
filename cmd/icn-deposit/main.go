@@ -77,5 +77,5 @@ func main() {
 	if err != nil {
 		log.Printf("Deposit error: %v", err)
 	}
-	log.Printf("Transaction sent: %v", wtx)
+	log.Printf("Transaction sent: %v", wtx.Hash().String())
 }
