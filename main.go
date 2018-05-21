@@ -24,9 +24,9 @@ func MsgHash(txHash common.Hash, destination common.Address, value *big.Int, dat
 
 	hash := solsha3.SoliditySHA3(
 		solsha3.Bytes32(txHash.Str()),
-		solsha3.Address(destination.String()),
+		solsha3.Address(destination),
 		solsha3.Int256(value),
-		solsha3.String(string(data[:])),
+		solsha3.String(data),
 		solsha3.Uint8(version),
 	)
 
