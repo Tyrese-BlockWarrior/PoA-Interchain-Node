@@ -56,7 +56,7 @@ func proceedTransaction(
 
 	r := common.BytesToHash(sig[0:32])
 	s := common.BytesToHash(sig[32:64])
-	v := uint8(sig[64:65][0])
+	v := uint8(sig[64:65][0] + 27)
 
 	wtx, err := sc.SubmitSignatureMC(auth, tx.Hash(), deposit.Receiver, tx.Value(), data, v, r, s)
 	if err != nil {
