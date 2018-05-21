@@ -59,22 +59,37 @@ type DepositEvent struct {
 // GetDepositEvent loops over the logs and returns the depositEvent
 func GetDepositEvent(abi abi.ABI, logs []*types.Log) DepositEvent {
 
-	var depositEvent DepositEvent
-
 	// There should be only one deposit event in the logs
 	for _, l := range logs {
+		var depositEvent DepositEvent
+
 		err := abi.Unpack(&depositEvent, "Deposit", l.Data)
 		if err != nil {
 			log.Printf("Event log unpack error: %v", err)
 			continue
 		}
 
+		// A valid deposit event has a sender and a receiver in Topics
+		if len(l.Topics) != 3 {
+			return DepositEvent{}
+		}
+
 		// Indexed attributes go in l.Topics instead of l.Data
 		depositEvent.Sender = common.BytesToAddress(l.Topics[1].Bytes())
 		depositEvent.Receiver = common.BytesToAddress(l.Topics[2].Bytes())
+		return depositEvent
 	}
 
-	return depositEvent
+	return DepositEvent{}
+}
+
+// ParseSignature parses a ECDSA signature and returns v, r, s
+func ParseSignature(sig []byte) (v uint8, r, s common.Hash) {
+	r = common.BytesToHash(sig[0:32])
+	s = common.BytesToHash(sig[32:64])
+	v = uint8(sig[64:65][0] + 27)
+
+	return
 }
 
 // GetLogs returns the logs for a transaction

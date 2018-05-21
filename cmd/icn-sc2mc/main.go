@@ -32,14 +32,15 @@ func proceedTransaction(
 ) error {
 	// Decode event logs
 	abi, _ := abi.JSON(strings.NewReader(sidechain.SideChainABI))
+
 	logs, err := icn.GetLogs(ctx, sidechainClient, tx)
 	if err != nil {
 		return err
 	}
-	deposit := icn.GetDepositEvent(abi, logs)
 
+	deposit := icn.GetDepositEvent(abi, logs)
 	if deposit == (icn.DepositEvent{}) {
-		return errors.New("No deposit event")
+		return errors.New("No valid deposit event")
 	}
 
 	log.Println("Mirroring transaction")
@@ -53,16 +54,14 @@ func proceedTransaction(
 		return errors.New("Sign failed: " + err.Error())
 	}
 
-	r := common.BytesToHash(sig[0:32])
-	s := common.BytesToHash(sig[32:64])
-	v := uint8(sig[64:65][0] + 27)
+	v, r, s := icn.ParseSignature(sig)
 
 	wtx, err := sc.SubmitSignatureMC(auth, tx.Hash(), deposit.Receiver, tx.Value(), data, v, r, s)
 	if err != nil {
 		return errors.New("SubmitSignatureMC failed: " + err.Error())
 	}
 
-	log.Printf("Transaction mirrored: %v", wtx)
+	log.Printf("Signature submited: %v", wtx)
 	return nil
 }
 
