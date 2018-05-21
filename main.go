@@ -3,6 +3,7 @@ package icn
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"math/big"
 
@@ -82,6 +83,8 @@ func ParseSignature(sig []byte) (v uint8, r, s common.Hash) {
 	r = common.BytesToHash(sig[0:32])
 	s = common.BytesToHash(sig[32:64])
 	v = uint8(sig[64:65][0] + 27)
+
+	fmt.Println(common.Bytes2Hex(sig), r.Hex(), s.Hex(), v)
 
 	return
 }
