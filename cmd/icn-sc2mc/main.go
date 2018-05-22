@@ -17,46 +17,52 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 func proceedTransaction(
 	ctx context.Context,
+	sideChainWalletAddress common.Address,
 	auth *bind.TransactOpts,
 	sidechainClient *ethclient.Client,
-	mainchainClient *ethclient.Client,
 	sc *sidechain.SideChain,
 	tx *types.Transaction,
 	key *keystore.Key,
 ) error {
 	// Decode event logs
 	abi, _ := abi.JSON(strings.NewReader(sidechain.SideChainABI))
+
 	logs, err := icn.GetLogs(ctx, sidechainClient, tx)
 	if err != nil {
 		return err
 	}
+
 	deposit := icn.GetDepositEvent(abi, logs)
-
 	if deposit == (icn.DepositEvent{}) {
-		return errors.New("No deposit event")
+		return errors.New("No valid deposit event")
 	}
 
-	log.Println("Mirroring transaction")
+	// Create the message hash
+	var data []byte
+	msgHash := icn.MsgHash(sideChainWalletAddress, tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
 
-	// Submit the transaction
-	data := []byte(`foo`)
-	msgHash := icn.MsgHash(tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
-	v, r, s, err := icn.GetRawSignature(ctx, auth, tx.Value(), key, deposit.Receiver, mainchainClient, data)
+	// Sign the message hash
+	sig, err := crypto.Sign(msgHash.Bytes(), key.PrivateKey)
 	if err != nil {
-		return errors.New("GetRawSignature failed: " + err.Error())
+		return errors.New("Sign failed: " + err.Error())
 	}
 
-	wtx, err := sc.SubmitSignatureMC(auth, msgHash, tx.Hash(), deposit.Receiver, tx.Value(), data, v, r, s)
+	// Parse the signature
+	v, r, s := icn.ParseSignature(sig)
+
+	// Submit the signature
+	wtx, err := sc.SubmitSignatureMC(auth, tx.Hash(), deposit.Receiver, tx.Value(), data, v, r, s)
 	if err != nil {
 		return errors.New("SubmitSignatureMC failed: " + err.Error())
 	}
 
-	log.Printf("Transaction mirrored: %v", wtx)
+	log.Printf("Signature submited: %v", wtx)
 	return nil
 }
 
@@ -64,7 +70,7 @@ func main() {
 	// Command line flags
 	keyJSONPath := flag.String("keyjson", "", "Path to the JSON private key file of the sealer")
 	password := flag.String("password", "", "Passphrase needed to unlock the sealer's JSON key")
-	mainChainEndpoint := flag.String("mainchainendpoint", "", "URL or path of the main chain endpoint")
+	//mainChainEndpoint := flag.String("mainchainendpoint", "", "URL or path of the main chain endpoint")
 	sideChainEndpoint := flag.String("sidechainendpoint", "", "URL or path of the side chain endpoint")
 	//mainChainWallet := flag.String("mainchainwallet", "", "Ethereum address of the multisig wallet on the main chain")
 	sideChainWallet := flag.String("sidechainwallet", "", "Ethereum address of the multisig wallet on the side chain")
@@ -72,7 +78,7 @@ func main() {
 	flag.Parse()
 
 	// Connect to both chains
-	mainChainClient, _ := ethclient.Dial(*mainChainEndpoint)
+	//mainChainClient, _ := ethclient.Dial(*mainChainEndpoint)
 	sideChainClient, _ := ethclient.Dial(*sideChainEndpoint)
 
 	sideChainWalletAddress := common.HexToAddress(*sideChainWallet)
@@ -88,12 +94,11 @@ func main() {
 	}
 
 	// Create a transactor
-	auth, err := bind.NewTransactor(strings.NewReader(string(keyJSON[:])), *password)
+	key, err := keystore.DecryptKey(keyJSON, *password)
 	if err != nil {
-		log.Fatalf("Failed to create authorized transactor: %v", err)
+		log.Fatalf("Failed to decrypt key: %v", err)
 	}
-
-	key, _ := keystore.DecryptKey(keyJSON, *password)
+	auth := bind.NewKeyedTransactor(key.PrivateKey)
 
 	// Attach the wallet
 	sc, err := sidechain.NewSideChain(sideChainWalletAddress, sideChainClient)
@@ -127,7 +132,7 @@ func main() {
 
 			// If money is sent to the side chain wallet address, mirror the transaction on the main chain
 			if to != nil && *to == sideChainWalletAddress {
-				err := proceedTransaction(ctx, auth, sideChainClient, mainChainClient, sc, tx, key)
+				err := proceedTransaction(ctx, sideChainWalletAddress, auth, sideChainClient, sc, tx, key)
 				if err != nil {
 					log.Println(err)
 				} else {

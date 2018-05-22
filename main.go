@@ -7,11 +7,8 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/miguelmota/go-solidity-sha3"
 )
 
@@ -20,27 +17,29 @@ import (
 //go:generate abigen --sol interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out bind/mainchain/main.go
 //go:generate abigen --sol interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out bind/sidechain/main.go
 
-// MsgHash returns the sha3 sum of txHash, destination, value, data and version
-func MsgHash(txHash common.Hash, destination common.Address, value *big.Int, data []byte, version uint8) common.Hash {
+// MsgHash returns the sha3 sum of 0x19, contractAddress, txHash, toAddress, value, data and version
+func MsgHash(
+	contractAddress common.Address,
+	txHash common.Hash,
+	toAddress common.Address,
+	value *big.Int,
+	data []byte,
+	version uint8) common.Hash {
 	var msgHash common.Hash
 
 	hash := solsha3.SoliditySHA3(
-		solsha3.Bytes32(txHash.Str()),
-		solsha3.Address(destination.String()),
-		solsha3.Int256(value),
-		solsha3.String(string(data[:])),
+		[]byte{0x19},
 		solsha3.Uint8(version),
+		solsha3.Address(contractAddress),
+		solsha3.Bytes32(txHash.Str()),
+		solsha3.Address(toAddress),
+		solsha3.Int256(value),
+		solsha3.String(data),
 	)
 
 	msgHash.SetBytes(hash)
 
 	return msgHash
-}
-
-// ToByte32 convers a variable lenght byte slice to a fixed lenght byte slice
-func ToByte32(in []byte) (out [32]byte) {
-	copy(out[:], in)
-	return out
 }
 
 // DepositEvent is used in unpacking events
@@ -53,59 +52,46 @@ type DepositEvent struct {
 // GetDepositEvent loops over the logs and returns the depositEvent
 func GetDepositEvent(abi abi.ABI, logs []*types.Log) DepositEvent {
 
-	var depositEvent DepositEvent
-
 	// There should be only one deposit event in the logs
 	for _, l := range logs {
+		var depositEvent DepositEvent
+
 		err := abi.Unpack(&depositEvent, "Deposit", l.Data)
 		if err != nil {
 			log.Printf("Event log unpack error: %v", err)
 			continue
 		}
 
+		// A valid deposit event has a sender and a receiver in Topics
+		if len(l.Topics) != 3 {
+			return DepositEvent{}
+		}
+
 		// Indexed attributes go in l.Topics instead of l.Data
 		depositEvent.Sender = common.BytesToAddress(l.Topics[1].Bytes())
 		depositEvent.Receiver = common.BytesToAddress(l.Topics[2].Bytes())
+		return depositEvent
 	}
 
-	return depositEvent
+	return DepositEvent{}
 }
 
-// GetRawSignature creates the transaction, signs it, and returns the v, r, s
-func GetRawSignature(
-	ctx context.Context,
-	auth *bind.TransactOpts,
-	value *big.Int,
-	key *keystore.Key,
-	destination common.Address,
-	mainchainClient *ethclient.Client,
-	data []byte) (uint8, [32]byte, [32]byte, error) {
+// ParseSignature parses a ECDSA signature and returns v, r, s
+func ParseSignature(sig []byte) (v uint8, r, s common.Hash) {
+	r = common.BytesToHash(sig[0:32])
+	s = common.BytesToHash(sig[32:64])
+	v = uint8(sig[64:65][0] + 27)
 
-	nonce, err := mainchainClient.NonceAt(ctx, auth.From, nil)
-	if err != nil {
-		return 0, [32]byte{}, [32]byte{}, errors.New("NonceAt failed: " + err.Error())
-	}
+	return
+}
 
-	var gasLimit uint64 = 100000
-	gasPrice := big.NewInt(20000000000) // 20 gwei
-	newTx := types.NewTransaction(nonce, destination, value, gasLimit, gasPrice, data)
-
-	signer := types.HomesteadSigner{}
-
-	signedTx, err := types.SignTx(newTx, signer, key.PrivateKey)
-	if err != nil {
-		return 0, [32]byte{}, [32]byte{},
-
-			errors.New("SignTx failed: " + err.Error())
-	}
-
-	v, r, s := signedTx.RawSignatureValues()
-
-	return uint8(v.Uint64()), ToByte32(r.Bytes()), ToByte32(s.Bytes()), nil
+// HasTransactionReceipt allows GetLogs to take either *ethclient.Client or *backends.SimulatedBackend as argument
+type HasTransactionReceipt interface {
+	TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error)
 }
 
 // GetLogs returns the logs for a transaction
-func GetLogs(ctx context.Context, client *ethclient.Client, tx *types.Transaction) ([]*types.Log, error) {
+func GetLogs(ctx context.Context, client HasTransactionReceipt, tx *types.Transaction) ([]*types.Log, error) {
 	// Get the transaction receipt
 	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {

@@ -29,17 +29,17 @@ func proceedTransaction(
 ) error {
 	// Decode event logs
 	abi, _ := abi.JSON(strings.NewReader(mainchain.MainChainABI))
+
 	logs, err := icn.GetLogs(ctx, client, tx)
 	if err != nil {
 		return err
 	}
+
 	deposit := icn.GetDepositEvent(abi, logs)
 
 	if deposit == (icn.DepositEvent{}) {
 		return errors.New("No deposit event")
 	}
-
-	log.Println("Mirroring transaction")
 
 	// Submit the transaction
 	wtx, err := sc.SubmitTransactionSC(auth, tx.Hash(), deposit.Receiver, tx.Value(), []byte(`foo`))
