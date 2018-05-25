@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/WeTrustPlatform/interchain-node"
+	"github.com/WeTrustPlatform/interchain-node/bind/mainchain"
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -21,68 +22,56 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-func proceedTransaction(
+func submitSignatureMC(
 	ctx context.Context,
 	sideChainWalletAddress common.Address,
 	auth *bind.TransactOpts,
 	sidechainClient *ethclient.Client,
 	sc *sidechain.SideChain,
-	tx *types.Transaction,
+	di icn.DepositInfo,
 	key *keystore.Key,
-) error {
-	// Decode event logs
-	abi, _ := abi.JSON(strings.NewReader(sidechain.SideChainABI))
-
-	logs, err := icn.GetLogs(ctx, sidechainClient, tx)
-	if err != nil {
-		return err
-	}
-
-	deposit := icn.GetDepositEvent(abi, logs)
-	if deposit == (icn.DepositEvent{}) {
-		return errors.New("No valid deposit event")
-	}
-
+) (*types.Transaction, error) {
 	// Create the message hash
 	var data []byte
-	msgHash := icn.MsgHash(sideChainWalletAddress, tx.Hash(), deposit.Receiver, tx.Value(), data, 1)
+
+	msgHash := icn.MsgHash(sideChainWalletAddress, di.TxHash, di.Event.Receiver, di.Event.Value, data, 1)
 
 	// Sign the message hash
 	sig, err := crypto.Sign(msgHash.Bytes(), key.PrivateKey)
 	if err != nil {
-		return errors.New("Sign failed: " + err.Error())
+		return nil, errors.New("Sign failed: " + err.Error())
 	}
 
 	// Parse the signature
 	v, r, s := icn.ParseSignature(sig)
 
 	// Submit the signature
-	wtx, err := sc.SubmitSignatureMC(auth, tx.Hash(), deposit.Receiver, tx.Value(), data, v, r, s)
-	if err != nil {
-		return errors.New("SubmitSignatureMC failed: " + err.Error())
-	}
-
-	log.Printf("Signature submited: %v", wtx)
-	return nil
+	return sc.SubmitSignatureMC(auth, di.TxHash, di.Event.Receiver, di.Event.Value, data, v, r, s)
 }
 
 func main() {
 	// Command line flags
 	keyJSONPath := flag.String("keyjson", "", "Path to the JSON private key file of the sealer")
 	password := flag.String("password", "", "Passphrase needed to unlock the sealer's JSON key")
-	//mainChainEndpoint := flag.String("mainchainendpoint", "", "URL or path of the main chain endpoint")
+	mainChainEndpoint := flag.String("mainchainendpoint", "", "URL or path of the main chain endpoint")
 	sideChainEndpoint := flag.String("sidechainendpoint", "", "URL or path of the side chain endpoint")
-	//mainChainWallet := flag.String("mainchainwallet", "", "Ethereum address of the multisig wallet on the main chain")
+	mainChainWallet := flag.String("mainchainwallet", "", "Ethereum address of the multisig wallet on the main chain")
 	sideChainWallet := flag.String("sidechainwallet", "", "Ethereum address of the multisig wallet on the side chain")
 
 	flag.Parse()
 
 	// Connect to both chains
-	//mainChainClient, _ := ethclient.Dial(*mainChainEndpoint)
-	sideChainClient, _ := ethclient.Dial(*sideChainEndpoint)
+	mainChainClient, err := ethclient.Dial(*mainChainEndpoint)
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
+	sideChainClient, err := ethclient.Dial(*sideChainEndpoint)
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
 
 	sideChainWalletAddress := common.HexToAddress(*sideChainWallet)
-	//mainChainWalletAddress := common.HexToAddress(*mainChainWallet)
+	mainChainWalletAddress := common.HexToAddress(*mainChainWallet)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -107,40 +96,52 @@ func main() {
 	}
 
 	// Get the latest block
-	latestBlock, err := sideChainClient.BlockByNumber(ctx, nil)
+	mcLast, err := mainChainClient.BlockByNumber(ctx, nil)
+	if err != nil {
+		log.Fatal("Can't get latest block:", err)
+	}
+	scLast, err := sideChainClient.BlockByNumber(ctx, nil)
 	if err != nil {
 		log.Fatal("Can't get latest block:", err)
 	}
 
-	log.Printf("Latest block: %v", latestBlock.Number())
+	mcABI, _ := abi.JSON(strings.NewReader(mainchain.MainChainABI))
+	scABI, _ := abi.JSON(strings.NewReader(sidechain.SideChainABI))
 
-	// Loop over the blocks
-	for i := big.NewInt(0); i.Cmp(latestBlock.Number()) <= 0; i.Add(i, big.NewInt(1)) {
+	mcDeposits := make(chan icn.DepositInfo)
+	scDeposits := make(chan icn.DepositInfo)
+	done := make(chan bool)
 
-		// Get the block details
-		block, err := sideChainClient.BlockByNumber(ctx, i)
-		if err != nil {
-			log.Println("Can't get block:", err)
-			continue
+	go icn.FindDeposits(
+		ctx,
+		mainChainClient,
+		mcABI,
+		mcDeposits,
+		done,
+		big.NewInt(0),
+		mcLast.Number(),
+		mainChainWalletAddress)
+
+	go icn.FindDeposits(
+		ctx,
+		sideChainClient,
+		scABI,
+		scDeposits,
+		done,
+		big.NewInt(0),
+		scLast.Number(),
+		sideChainWalletAddress)
+
+	for n := 2; n > 0; {
+		select {
+		case d := <-mcDeposits:
+			tx, err := sc.SubmitTransactionSC(auth, d.TxHash, d.Event.Receiver, d.Event.Value, []byte{})
+			log.Println("[mc2sc]", tx, err)
+		case d := <-scDeposits:
+			tx, err := submitSignatureMC(ctx, sideChainWalletAddress, auth, sideChainClient, sc, d, key)
+			log.Println("[sc2mc]", tx, err)
+		case <-done:
+			n--
 		}
-
-		txs := block.Transactions()
-
-		// Loop over the transactions
-		for j, tx := range txs {
-			to := tx.To()
-
-			// If money is sent to the side chain wallet address, mirror the transaction on the main chain
-			if to != nil && *to == sideChainWalletAddress {
-				err := proceedTransaction(ctx, sideChainWalletAddress, auth, sideChainClient, sc, tx, key)
-				if err != nil {
-					log.Println(err)
-				} else {
-					log.Printf("Transaction proceeded in block %v: %v\n", i, j)
-				}
-			}
-		}
-
-		//log.Println("Block proceeded:", i)
 	}
 }

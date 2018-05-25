@@ -49,11 +49,9 @@ Wait 10 seconds between each call
 
 ## Run the interchain node
 
-For each sealer, run the mc2sc and sc2mc channels:
+For each sealer, run the interchain node:
 
-    go run cmd/icn-mc2sc/main.go -keyjson=sidechain/keystore/<sealer_key_json> -password=dummy -mainchainendpoint=mainchain/geth.ipc -sidechainendpoint=sidechain/geth.ipc -mainchainwallet=`cat mainchain/wallet` -sidechainwallet=`cat sidechain/wallet`
-
-    go run cmd/icn-sc2mc/main.go -keyjson=sidechain/keystore/<sealer_key_json> -password=dummy -sidechainendpoint=sidechain/geth.ipc -sidechainwallet=`cat sidechain/wallet`
+    go run cmd/icn/main.go -keyjson=sidechain/keystore/<sealer_key_json> -mainchainendpoint=mainchain/geth.ipc -sidechainendpoint=sidechain/geth.ipc -password=dummy -mainchainwallet=`cat mainchain/wallet` -sidechainwallet=`cat sidechain/wallet`
 
 ## Sending ether to arbitrary addresses offchain
 

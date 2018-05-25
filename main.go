@@ -2,10 +2,10 @@ package icn
 
 import (
 	"context"
-	"errors"
 	"log"
 	"math/big"
 
+	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -42,38 +42,17 @@ func MsgHash(
 	return msgHash
 }
 
+// DepositInfo groups a DepositEvent and a Transaction to be processed
+type DepositInfo struct {
+	Event  DepositEvent
+	TxHash common.Hash
+}
+
 // DepositEvent is used in unpacking events
 type DepositEvent struct {
 	Sender   common.Address
 	Receiver common.Address
 	Value    *big.Int
-}
-
-// GetDepositEvent loops over the logs and returns the depositEvent
-func GetDepositEvent(abi abi.ABI, logs []*types.Log) DepositEvent {
-
-	// There should be only one deposit event in the logs
-	for _, l := range logs {
-		var depositEvent DepositEvent
-
-		err := abi.Unpack(&depositEvent, "Deposit", l.Data)
-		if err != nil {
-			log.Printf("Event log unpack error: %v", err)
-			continue
-		}
-
-		// A valid deposit event has a sender and a receiver in Topics
-		if len(l.Topics) != 3 {
-			return DepositEvent{}
-		}
-
-		// Indexed attributes go in l.Topics instead of l.Data
-		depositEvent.Sender = common.BytesToAddress(l.Topics[1].Bytes())
-		depositEvent.Receiver = common.BytesToAddress(l.Topics[2].Bytes())
-		return depositEvent
-	}
-
-	return DepositEvent{}
 }
 
 // ParseSignature parses a ECDSA signature and returns v, r, s
@@ -85,22 +64,55 @@ func ParseSignature(sig []byte) (v uint8, r, s common.Hash) {
 	return
 }
 
-// HasTransactionReceipt allows GetLogs to take either *ethclient.Client or *backends.SimulatedBackend as argument
-type HasTransactionReceipt interface {
-	TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error)
+// HasFilterLogs allows FindDeposits to take either *ethclient.Client or *backends.SimulatedBackend as argument
+type HasFilterLogs interface {
+	FilterLogs(context.Context, ethereum.FilterQuery) ([]types.Log, error)
 }
 
-// GetLogs returns the logs for a transaction
-func GetLogs(ctx context.Context, client HasTransactionReceipt, tx *types.Transaction) ([]*types.Log, error) {
-	// Get the transaction receipt
-	receipt, err := client.TransactionReceipt(ctx, tx.Hash())
-	if err != nil {
-		return nil, err
+// FindDeposits loops over blocks and transactions to find valid deposit events
+func FindDeposits(
+	ctx context.Context,
+	client HasFilterLogs,
+	abi abi.ABI,
+	ch chan<- DepositInfo,
+	done chan<- bool,
+	from *big.Int,
+	to *big.Int,
+	address common.Address) {
+
+	crit := ethereum.FilterQuery{
+		Addresses: []common.Address{address},
+		FromBlock: from,
+		ToBlock:   to,
 	}
 
-	if receipt.Status == types.ReceiptStatusFailed {
-		return nil, errors.New("Receipt status is ReceiptStatusFailed")
+	logs, _ := client.FilterLogs(ctx, crit)
+
+	for _, l := range logs {
+		var de DepositEvent
+
+		// Some events may match the criteria without holding data
+		if len(l.Data) == 0 {
+			continue
+		}
+
+		err := abi.Unpack(&de, "Deposit", l.Data)
+		if err != nil {
+			log.Printf("Event log unpack error: %v", err)
+			continue
+		}
+
+		// A valid deposit event has a sender and a receiver in Topics
+		if len(l.Topics) != 3 {
+			continue
+		}
+
+		// Indexed attributes go in l.Topics instead of l.Data
+		de.Sender = common.BytesToAddress(l.Topics[1].Bytes())
+		de.Receiver = common.BytesToAddress(l.Topics[2].Bytes())
+		di := DepositInfo{Event: de, TxHash: l.TxHash}
+		ch <- di
 	}
 
-	return receipt.Logs, nil
+	done <- true
 }

@@ -4,14 +4,15 @@ import (
 	"context"
 	"math/big"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -88,7 +89,9 @@ func TestParseSignature(t *testing.T) {
 	}
 }
 
-func setupTestGetLogs() (*backends.SimulatedBackend, common.Address, *types.Transaction) {
+func TestFindDeposits(t *testing.T) {
+	ctx := context.Background()
+
 	key1, _ := crypto.GenerateKey()
 	sealer1 := bind.NewKeyedTransactor(key1)
 	key2, _ := crypto.GenerateKey()
@@ -100,44 +103,78 @@ func setupTestGetLogs() (*backends.SimulatedBackend, common.Address, *types.Tran
 
 	sim := backends.NewSimulatedBackend(alloc)
 
-	contractAddress, _, sc, _ := sidechain.DeploySideChain(sealer1, sim, []common.Address{sealer1.From, sealer2.From}, 2)
+	address, _, sc, _ := sidechain.DeploySideChain(sealer1, sim, []common.Address{sealer1.From, sealer2.From}, 2)
+
+	abi, _ := abi.JSON(strings.NewReader(sidechain.SideChainABI))
 
 	sealer1.Value = big.NewInt(1000000000)
-	tx, _ := sc.Deposit(sealer1, sealer2.From)
-
+	sc.Deposit(sealer1, sealer2.From)
+	sc.Deposit(sealer1, sealer2.From)
+	sc.Deposit(sealer1, sealer2.From)
+	sim.Commit()
+	sc.Deposit(sealer1, sealer2.From)
+	sc.Deposit(sealer1, sealer2.From)
 	sim.Commit()
 
-	return sim, contractAddress, tx
-}
+	t.Run("Returns the right number of logs for all blocks", func(t *testing.T) {
+		deposits := make(chan DepositInfo)
+		done := make(chan bool)
 
-func TestGetLogs(t *testing.T) {
-	ctx := context.Background()
-	client, addr, tx := setupTestGetLogs()
+		go FindDeposits(
+			ctx,
+			sim,
+			abi,
+			deposits,
+			done,
+			big.NewInt(0),
+			nil,
+			address)
 
-	t.Run("Returns the right number of logs", func(t *testing.T) {
-		logs, _ := GetLogs(ctx, client, tx)
-		have := len(logs)
-		want := 1
-		if !(have == want) {
-			t.Errorf("len(GetLogs()) = %v, want %v", have, want)
+		found := 0
+		for n := 1; n > 0; {
+			select {
+			case <-deposits:
+				found++
+			case <-done:
+				n--
+			}
+		}
+
+		have := found
+		want := 5
+		if have != want {
+			t.Errorf("found = %v, want %v", have, want)
 		}
 	})
 
-	t.Run("Returns a log with the right contract address", func(t *testing.T) {
-		logs, _ := GetLogs(ctx, client, tx)
-		have := logs[0].Address
-		want := addr
-		if !(have == want) {
-			t.Errorf("logs[0].Address = %v, want %v", have, want)
-		}
-	})
+	t.Run("Returns the right number of logs for a given block", func(t *testing.T) {
+		deposits := make(chan DepositInfo)
+		done := make(chan bool)
 
-	t.Run("Returns a log with the right number of topics", func(t *testing.T) {
-		logs, _ := GetLogs(ctx, client, tx)
-		have := len(logs[0].Topics)
-		want := 3
-		if !(have == want) {
-			t.Errorf("len(logs[0].Topics) = %v, want %v", have, want)
+		go FindDeposits(
+			ctx,
+			sim,
+			abi,
+			deposits,
+			done,
+			big.NewInt(2),
+			big.NewInt(3),
+			address)
+
+		found := 0
+		for n := 1; n > 0; {
+			select {
+			case <-deposits:
+				found++
+			case <-done:
+				n--
+			}
+		}
+
+		have := found
+		want := 2
+		if have != want {
+			t.Errorf("found = %v, want %v", have, want)
 		}
 	})
 }
