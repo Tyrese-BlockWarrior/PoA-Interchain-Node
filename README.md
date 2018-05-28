@@ -2,34 +2,40 @@
 
 The interchain node allows ethereum users to transfer funds between a main chain and a side chain using multisig wallets.
 
-It is composed of two programs:
-
- * icn-mc2sc: Watches the main chain and react on the side chain
- * icn-sc2mc: Watches the side chain and react on the main chain (Unimplemented yet)
-
 ## Dependencies
 
  * solc
  * abigen
  * go
+
+### Dependencies of the development environment:
+
  * geth
-
-### Dependencies for developers:
-
  * bootnode
- * eth-contract-address
 
 ### Setup dependencies on OSX:
 
 ```
-brew install geth
+brew tap ethereum/ethereum
+brew install ethereum
 brew install solidity
-go install github.com/kivutar/eth-contract-address
 ```
 
 ## Getting the source code
 
     go get github.com/WeTrustPlatform/interchain-node
+
+But as the repo is still private, you will have to clone the repo directly in your go path:
+
+    cd $GOPATH
+    mkdir -p src/github.com/WeTrustPlatform/
+    cd src/github.com/WeTrustPlatform/
+    git clone git@github.com:WeTrustPlatform/interchain-node.git
+    cd interchain-node
+
+## Run the test suite
+
+    go test -cover -v ./...
 
 ## Run the development environment
 
@@ -57,7 +63,7 @@ For each sealer, run the interchain node:
 
 Our multisig wallets have a function called `deposit` which allows you to transfer ether from your address on the chain A to a receiver on the chain B.
 
-Instead of paying to the wallet address, you call the `deposit` method using geth console or our utility program `icn-deposit.go`:
+Instead of paying to the wallet address, you call the `deposit` method using the geth console or our utility program `icn-deposit.go`:
 
     go run cmd/icn-deposit/main.go -mainchain -keyjson=mainchain/keystore/<your_key_json> -password=dummy -endpoint=mainchain/geth.ipc -wallet=`cat mainchain/wallet` -receiver=`cat sidechain/sealer` -value="25000000000000000000"
 

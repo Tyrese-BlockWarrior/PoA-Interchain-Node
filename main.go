@@ -2,13 +2,18 @@ package icn
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"errors"
 	"log"
 	"math/big"
 
+	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/miguelmota/go-solidity-sha3"
 )
 
@@ -115,4 +120,31 @@ func FindDeposits(
 	}
 
 	done <- true
+}
+
+// SubmitSignatureMC submits a signature on the sidechain that will be later checked on the mainchain
+func SubmitSignatureMC(
+	ctx context.Context,
+	sideChainWalletAddress common.Address,
+	auth *bind.TransactOpts,
+	sc *sidechain.SideChain,
+	event *sidechain.SideChainDeposit,
+	key *ecdsa.PrivateKey,
+) (*types.Transaction, error) {
+	// Create the message hash
+	var data []byte
+
+	msgHash := MsgHash(sideChainWalletAddress, event.Raw.TxHash, event.To, event.Value, data, 1)
+
+	// Sign the message hash
+	sig, err := crypto.Sign(msgHash.Bytes(), key)
+	if err != nil {
+		return nil, errors.New("Sign failed: " + err.Error())
+	}
+
+	// Parse the signature
+	v, r, s := ParseSignature(sig)
+
+	// Submit the signature
+	return sc.SubmitSignatureMC(auth, event.Raw.TxHash, event.To, event.Value, data, v, r, s)
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/WeTrustPlatform/interchain-node/bind/mainchain"
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -92,10 +93,10 @@ func TestParseSignature(t *testing.T) {
 func TestFindDeposits(t *testing.T) {
 	ctx := context.Background()
 
-	key1, _ := crypto.GenerateKey()
-	sealer1 := bind.NewKeyedTransactor(key1)
-	key2, _ := crypto.GenerateKey()
-	sealer2 := bind.NewKeyedTransactor(key2)
+	sealer1Key, _ := crypto.GenerateKey()
+	sealer1 := bind.NewKeyedTransactor(sealer1Key)
+	sealer2Key, _ := crypto.GenerateKey()
+	sealer2 := bind.NewKeyedTransactor(sealer2Key)
 
 	alloc := core.GenesisAlloc{
 		sealer1.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
@@ -175,6 +176,163 @@ func TestFindDeposits(t *testing.T) {
 		want := 2
 		if have != want {
 			t.Errorf("found = %v, want %v", have, want)
+		}
+	})
+}
+
+func TestMainChainToSideChain(t *testing.T) {
+	ctx := context.Background()
+
+	key0, _ := crypto.GenerateKey()
+	miner := bind.NewKeyedTransactor(key0)
+	sealer1Key, _ := crypto.GenerateKey()
+	sealer1 := bind.NewKeyedTransactor(sealer1Key)
+	sealer1Auth := bind.NewKeyedTransactor(sealer1Key)
+	sealer2Key, _ := crypto.GenerateKey()
+	sealer2 := bind.NewKeyedTransactor(sealer2Key)
+	sealer2Auth := bind.NewKeyedTransactor(sealer2Key)
+	tester1Key, _ := crypto.GenerateKey()
+	tester1 := bind.NewKeyedTransactor(tester1Key)
+	tester2Key, _ := crypto.GenerateKey()
+	tester2 := bind.NewKeyedTransactor(tester2Key)
+
+	scAddr := crypto.CreateAddress(sealer1.From, 0)
+	mcAddr := crypto.CreateAddress(sealer2.From, 0)
+
+	scClient := backends.NewSimulatedBackend(core.GenesisAlloc{
+		scAddr:       core.GenesisAccount{Balance: big.NewInt(50000000000)},
+		sealer1.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		sealer2.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		tester1.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+	})
+	mcClient := backends.NewSimulatedBackend(core.GenesisAlloc{
+		mcAddr:       core.GenesisAccount{Balance: big.NewInt(50000000000)},
+		miner.From:   core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		sealer1.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		sealer2.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		tester2.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+	})
+
+	_, _, sc, _ := sidechain.DeploySideChain(sealer1, scClient, []common.Address{sealer1.From, sealer2.From}, 2)
+	_, _, mc, _ := mainchain.DeployMainChain(sealer2, mcClient, []common.Address{sealer1.From, sealer2.From}, 2)
+
+	tester2.Value = big.NewInt(200000000)
+	tx, _ := mc.Deposit(tester2, tester1.From)
+	mcClient.Commit()
+
+	mci, _ := mc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
+	for mci.Next() {
+		sc.SubmitTransactionSC(sealer1Auth, mci.Event.Raw.TxHash, mci.Event.To, mci.Event.Value, []byte{})
+		scClient.Commit()
+		sc.SubmitTransactionSC(sealer2Auth, mci.Event.Raw.TxHash, mci.Event.To, mci.Event.Value, []byte{})
+		scClient.Commit()
+	}
+
+	t.Run("Transaction is confirmed after the number of required votes on the SC is reached", func(t *testing.T) {
+		confirmed, _ := sc.IsConfirmed(&bind.CallOpts{
+			Context: ctx,
+			Pending: false,
+			From:    sealer1.From,
+		}, tx.Hash())
+		if !confirmed {
+			t.Errorf("confirmed = %v, want %v", confirmed, true)
+		}
+	})
+
+	t.Run("Sender has been debited on the mainchain", func(t *testing.T) {
+		have, _ := mcClient.BalanceAt(ctx, tester2.From, nil)
+		want := big.NewInt(10000000000 - 200000000 - int64(tx.Gas()))
+		if !reflect.DeepEqual(have, want) {
+			t.Errorf("have = %v, want %v", have, want)
+		}
+	})
+
+	t.Run("Recipient has been credited on the sidechain", func(t *testing.T) {
+		have, _ := scClient.BalanceAt(ctx, tester1.From, nil)
+		want := big.NewInt(10000000000 + 200000000)
+		if !reflect.DeepEqual(have, want) {
+			t.Errorf("have = %v, want %v", have, want)
+		}
+	})
+
+	t.Run("Main chain smart contract has been credited", func(t *testing.T) {
+		have, _ := mcClient.BalanceAt(ctx, mcAddr, nil)
+		want := big.NewInt(50000000000 + 200000000)
+		if !reflect.DeepEqual(have, want) {
+			t.Errorf("have = %v, want %v", have, want)
+		}
+	})
+
+	t.Run("Side chain smart contract has been debited", func(t *testing.T) {
+		have, _ := scClient.BalanceAt(ctx, scAddr, nil)
+		want := big.NewInt(50000000000 - 200000000)
+		if !reflect.DeepEqual(have, want) {
+			t.Errorf("have = %v, want %v", have, want)
+		}
+	})
+}
+
+func TestSideChainToMainChain(t *testing.T) {
+	ctx := context.Background()
+
+	minerKey, _ := crypto.GenerateKey()
+	miner := bind.NewKeyedTransactor(minerKey)
+	sealer1Key, _ := crypto.GenerateKey()
+	sealer1 := bind.NewKeyedTransactor(sealer1Key)
+	sealer1Auth := bind.NewKeyedTransactor(sealer1Key)
+	sealer2Key, _ := crypto.GenerateKey()
+	sealer2 := bind.NewKeyedTransactor(sealer2Key)
+	sealer2Auth := bind.NewKeyedTransactor(sealer2Key)
+	tester1Key, _ := crypto.GenerateKey()
+	tester1 := bind.NewKeyedTransactor(tester1Key)
+	tester2Key, _ := crypto.GenerateKey()
+	tester2 := bind.NewKeyedTransactor(tester2Key)
+
+	scAddr := crypto.CreateAddress(sealer1.From, 0)
+	mcAddr := crypto.CreateAddress(sealer2.From, 0)
+
+	scClient := backends.NewSimulatedBackend(core.GenesisAlloc{
+		scAddr:       core.GenesisAccount{Balance: big.NewInt(50000000000)},
+		sealer1.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		sealer2.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		tester1.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+	})
+	mcClient := backends.NewSimulatedBackend(core.GenesisAlloc{
+		mcAddr:       core.GenesisAccount{Balance: big.NewInt(50000000000)},
+		miner.From:   core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		sealer1.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		sealer2.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+		tester2.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
+	})
+
+	_, _, sc, _ := sidechain.DeploySideChain(sealer1, scClient, []common.Address{sealer1.From, sealer2.From}, 2)
+	mainchain.DeployMainChain(sealer2, mcClient, []common.Address{sealer1.From, sealer2.From}, 2)
+
+	tester1.Value = big.NewInt(200000000)
+	tx, _ := sc.Deposit(tester1, tester2.From)
+	scClient.Commit()
+
+	sci, _ := sc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
+	for sci.Next() {
+		SubmitSignatureMC(ctx, scAddr, sealer1Auth, sc, sci.Event, sealer1Key)
+		scClient.Commit()
+		SubmitSignatureMC(ctx, scAddr, sealer2Auth, sc, sci.Event, sealer2Key)
+		scClient.Commit()
+	}
+
+	t.Run("SignatureAdded events are emitted on the sidechain", func(t *testing.T) {
+		var count int
+		iter, _ := sc.FilterSignatureAdded(&bind.FilterOpts{Start: 0, End: nil, Context: ctx})
+		for iter.Next() {
+			if iter.Event.TxHash == tx.Hash() {
+				count++
+			}
+		}
+
+		have := count
+		want := 2
+		if have != want {
+			t.Errorf("have = %v, want %v", have, want)
 		}
 	})
 }
