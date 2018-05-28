@@ -4,12 +4,10 @@ import (
 	"context"
 	"math/big"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/WeTrustPlatform/interchain-node/bind/mainchain"
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -88,96 +86,6 @@ func TestParseSignature(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestFindDeposits(t *testing.T) {
-	ctx := context.Background()
-
-	sealer1Key, _ := crypto.GenerateKey()
-	sealer1 := bind.NewKeyedTransactor(sealer1Key)
-	sealer2Key, _ := crypto.GenerateKey()
-	sealer2 := bind.NewKeyedTransactor(sealer2Key)
-
-	alloc := core.GenesisAlloc{
-		sealer1.From: core.GenesisAccount{Balance: big.NewInt(10000000000)},
-	}
-
-	sim := backends.NewSimulatedBackend(alloc)
-
-	address, _, sc, _ := sidechain.DeploySideChain(sealer1, sim, []common.Address{sealer1.From, sealer2.From}, 2)
-
-	abi, _ := abi.JSON(strings.NewReader(sidechain.SideChainABI))
-
-	sealer1.Value = big.NewInt(1000000000)
-	sc.Deposit(sealer1, sealer2.From)
-	sc.Deposit(sealer1, sealer2.From)
-	sc.Deposit(sealer1, sealer2.From)
-	sim.Commit()
-	sc.Deposit(sealer1, sealer2.From)
-	sc.Deposit(sealer1, sealer2.From)
-	sim.Commit()
-
-	t.Run("Returns the right number of logs for all blocks", func(t *testing.T) {
-		deposits := make(chan DepositInfo)
-		done := make(chan bool)
-
-		go FindDeposits(
-			ctx,
-			sim,
-			abi,
-			deposits,
-			done,
-			big.NewInt(0),
-			nil,
-			address)
-
-		found := 0
-		for n := 1; n > 0; {
-			select {
-			case <-deposits:
-				found++
-			case <-done:
-				n--
-			}
-		}
-
-		have := found
-		want := 5
-		if have != want {
-			t.Errorf("found = %v, want %v", have, want)
-		}
-	})
-
-	t.Run("Returns the right number of logs for a given block", func(t *testing.T) {
-		deposits := make(chan DepositInfo)
-		done := make(chan bool)
-
-		go FindDeposits(
-			ctx,
-			sim,
-			abi,
-			deposits,
-			done,
-			big.NewInt(2),
-			big.NewInt(3),
-			address)
-
-		found := 0
-		for n := 1; n > 0; {
-			select {
-			case <-deposits:
-				found++
-			case <-done:
-				n--
-			}
-		}
-
-		have := found
-		want := 2
-		if have != want {
-			t.Errorf("found = %v, want %v", have, want)
-		}
-	})
 }
 
 func TestMainChainToSideChain(t *testing.T) {

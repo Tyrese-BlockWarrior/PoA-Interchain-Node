@@ -4,12 +4,9 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"errors"
-	"log"
 	"math/big"
 
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
-	ethereum "github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -67,59 +64,6 @@ func ParseSignature(sig []byte) (v uint8, r, s common.Hash) {
 	v = uint8(sig[64:65][0] + 27)
 
 	return
-}
-
-// HasFilterLogs allows FindDeposits to take either *ethclient.Client or *backends.SimulatedBackend as argument
-type HasFilterLogs interface {
-	FilterLogs(context.Context, ethereum.FilterQuery) ([]types.Log, error)
-}
-
-// FindDeposits loops over blocks and transactions to find valid deposit events
-func FindDeposits(
-	ctx context.Context,
-	client HasFilterLogs,
-	abi abi.ABI,
-	ch chan<- DepositInfo,
-	done chan<- bool,
-	from *big.Int,
-	to *big.Int,
-	address common.Address) {
-
-	crit := ethereum.FilterQuery{
-		Addresses: []common.Address{address},
-		FromBlock: from,
-		ToBlock:   to,
-	}
-
-	logs, _ := client.FilterLogs(ctx, crit)
-
-	for _, l := range logs {
-		var de DepositEvent
-
-		// Some events may match the criteria without holding data
-		if len(l.Data) == 0 {
-			continue
-		}
-
-		err := abi.Unpack(&de, "Deposit", l.Data)
-		if err != nil {
-			log.Printf("Event log unpack error: %v", err)
-			continue
-		}
-
-		// A valid deposit event has a sender and a receiver in Topics
-		if len(l.Topics) != 3 {
-			continue
-		}
-
-		// Indexed attributes go in l.Topics instead of l.Data
-		de.Sender = common.BytesToAddress(l.Topics[1].Bytes())
-		de.Receiver = common.BytesToAddress(l.Topics[2].Bytes())
-		di := DepositInfo{Event: de, TxHash: l.TxHash}
-		ch <- di
-	}
-
-	done <- true
 }
 
 // SubmitSignatureMC submits a signature on the sidechain that will be later checked on the mainchain
