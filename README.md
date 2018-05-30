@@ -57,7 +57,25 @@ Wait 10 seconds between each call
 
 For each sealer, run the interchain node:
 
-    go run cmd/icn/main.go -keyjson=sidechain/keystore/<sealer_key_json> -mainchainendpoint=mainchain/geth.ipc -sidechainendpoint=sidechain/geth.ipc -password=dummy -mainchainwallet=`cat mainchain/wallet` -sidechainwallet=`cat sidechain/wallet`
+    go run cmd/icn/main.go -k sidechain/keystore/<sealer_key_json> --mainchainendpoint=mainchain/geth.ipc --sidechainendpoint=sidechain/geth.ipc -p dummy --mainchainwallet=`cat mainchain/wallet` --sidechainwallet=`cat sidechain/wallet`
+
+```
+Usage:
+  main [OPTIONS]
+
+Application Options:
+  -m, --mainchain          Watch the main chain
+  -s, --sidechain          Watch the side chain
+  -k, --keyjson=           Path to the JSON private key file of the sealer
+  -p, --password=          Passphrase needed to unlock the sealer's JSON key
+      --mainchainendpoint= URL or path of the main chain endpoint
+      --sidechainendpoint= URL or path of the side chain endpoint
+      --mainchainwallet=   Ethereum address of the multisig wallet on the main chain
+      --sidechainwallet=   Ethereum address of the multisig wallet on the side chain
+
+Help Options:
+  -h, --help               Show this help message
+```
 
 ## Sending ether to arbitrary addresses offchain
 

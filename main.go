@@ -33,7 +33,7 @@ func MsgHash(
 		[]byte{0x19},
 		solsha3.Uint8(version),
 		solsha3.Address(contractAddress),
-		solsha3.Bytes32(txHash.Str()),
+		solsha3.Bytes32(string(txHash[:])),
 		solsha3.Address(toAddress),
 		solsha3.Int256(value),
 		solsha3.String(data),

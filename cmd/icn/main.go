@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
-	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -15,43 +17,64 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/jessevdk/go-flags"
 )
+
+var opts struct {
+	MainChain         bool   `short:"m" long:"mainchain" required:"false" description:"Watch the main chain only"`
+	SideChain         bool   `short:"s" long:"sidechain" required:"false" description:"Watch the side chain only"`
+	KeyJSONPath       string `short:"k" long:"keyjson" required:"true" description:"Path to the JSON private key file of the sealer"`
+	Password          string `short:"p" long:"password" required:"false" description:"Passphrase needed to unlock the sealer's JSON key"`
+	MainChainEndpoint string `long:"mainchainendpoint" required:"true" description:"URL or path of the main chain endpoint"`
+	SideChainEndpoint string `long:"sidechainendpoint" required:"true" description:"URL or path of the side chain endpoint"`
+	MainChainWallet   string `long:"mainchainwallet" required:"true" description:"Ethereum address of the multisig wallet on the main chain"`
+	SideChainWallet   string `long:"sidechainwallet" required:"true" description:"Ethereum address of the multisig wallet on the side chain"`
+}
 
 func handleError(err error) {
 	if err != nil {
-		log.Fatalf(err.Error())
+		fmt.Println(err.Error())
+		os.Exit(0)
 	}
 }
 
 func main() {
-	// Command line flags
-	keyJSONPath := flag.String("keyjson", "", "Path to the JSON private key file of the sealer")
-	password := flag.String("password", "", "Passphrase needed to unlock the sealer's JSON key")
-	mainChainEndpoint := flag.String("mainchainendpoint", "", "URL or path of the main chain endpoint")
-	sideChainEndpoint := flag.String("sidechainendpoint", "", "URL or path of the side chain endpoint")
-	mainChainWallet := flag.String("mainchainwallet", "", "Ethereum address of the multisig wallet on the main chain")
-	sideChainWallet := flag.String("sidechainwallet", "", "Ethereum address of the multisig wallet on the side chain")
+	_, err := flags.Parse(&opts)
+	if err != nil {
+		os.Exit(0)
+	}
 
-	flag.Parse()
+	// Prompt passphrase if not passed as a flag
+	if opts.Password == "" {
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("Enter your passphrase: ")
+		opts.Password, _ = reader.ReadString('\n')
+	}
+
+	// Default behavior is to watch both chains
+	if !opts.MainChain && !opts.SideChain {
+		opts.SideChain = true
+		opts.MainChain = true
+	}
 
 	// Connect to both chains
-	mainChainClient, err := ethclient.Dial(*mainChainEndpoint)
+	mainChainClient, err := ethclient.Dial(opts.MainChainEndpoint)
 	handleError(err)
-	sideChainClient, err := ethclient.Dial(*sideChainEndpoint)
+	sideChainClient, err := ethclient.Dial(opts.SideChainEndpoint)
 	handleError(err)
 
-	sideChainWalletAddress := common.HexToAddress(*sideChainWallet)
-	mainChainWalletAddress := common.HexToAddress(*mainChainWallet)
+	sideChainWalletAddress := common.HexToAddress(opts.SideChainWallet)
+	mainChainWalletAddress := common.HexToAddress(opts.MainChainWallet)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	// Open the account key file
-	keyJSON, err := ioutil.ReadFile(*keyJSONPath)
+	keyJSON, err := ioutil.ReadFile(opts.KeyJSONPath)
 	handleError(err)
 
 	// Create a transactor
-	key, err := keystore.DecryptKey(keyJSON, *password)
+	key, err := keystore.DecryptKey(keyJSON, opts.Password)
 	handleError(err)
 	auth := bind.NewKeyedTransactor(key.PrivateKey)
 
@@ -62,25 +85,30 @@ func main() {
 	handleError(err)
 
 	var wg sync.WaitGroup
-	wg.Add(2)
 
-	go func() {
-		mci, _ := mc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
-		for mci.Next() {
-			tx, err := sc.SubmitTransactionSC(auth, mci.Event.Raw.TxHash, mci.Event.To, mci.Event.Value, []byte{})
-			log.Println("[mc2sc]", mci.Event.Raw.BlockNumber, tx, err)
-		}
-		wg.Done()
-	}()
+	if opts.MainChain {
+		wg.Add(1)
+		go func() {
+			mci, _ := mc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
+			for mci.Next() {
+				tx, err := sc.SubmitTransactionSC(auth, mci.Event.Raw.TxHash, mci.Event.To, mci.Event.Value, []byte{})
+				log.Println("[mc2sc]", mci.Event.Raw.BlockNumber, tx, err)
+			}
+			wg.Done()
+		}()
+	}
 
-	go func() {
-		sci, _ := sc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
-		for sci.Next() {
-			tx, err := icn.SubmitSignatureMC(ctx, sideChainWalletAddress, auth, sc, sci.Event, key.PrivateKey)
-			log.Println("[sc2mc]", sci.Event.Raw.BlockNumber, tx, err)
-		}
-		wg.Done()
-	}()
+	if opts.SideChain {
+		wg.Add(1)
+		go func() {
+			sci, _ := sc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
+			for sci.Next() {
+				tx, err := icn.SubmitSignatureMC(ctx, sideChainWalletAddress, auth, sc, sci.Event, key.PrivateKey)
+				log.Println("[sc2mc]", sci.Event.Raw.BlockNumber, tx, err)
+			}
+			wg.Done()
+		}()
+	}
 
 	wg.Wait()
 }
