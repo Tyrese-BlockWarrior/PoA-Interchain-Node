@@ -107,6 +107,25 @@ func TestParseSignature(t *testing.T) {
 	}
 }
 
+func TestSign(t *testing.T) {
+	key2, _ := crypto.HexToECDSA("148435bc1bc5ee5ab6f57745625d6c3e15e99b335f29ba75a8542546fd2e2dc4")
+	gotV, gotR, gotS, _ := Sign(common.HexToHash("0x6b0673bcb3726c0f7956ef57a9542ed225bfe74f1d2a75414d198d55e8956da5"), key2)
+
+	wantV := uint8(28)
+	wantR := common.HexToHash("1ad083863dffca2c52befbe45984236f58721430c613da5653a6c0990619b892")
+	wantS := common.HexToHash("27d9b8b7094cbd42d6c30a3c7ed840531b744abbf7f95ab294efe399eb394797")
+
+	if gotV != wantV {
+		t.Errorf("Sign() gotV = %v, want %v", gotV, wantV)
+	}
+	if gotR != wantR {
+		t.Errorf("Sign() gotR = %v, want %v", gotR, wantR)
+	}
+	if gotS != wantS {
+		t.Errorf("Sign() gotS = %v, want %v", gotS, wantS)
+	}
+}
+
 func TestMainChainToSideChain(t *testing.T) {
 	ctx := context.Background()
 
@@ -233,7 +252,7 @@ func TestSideChainToMainChain(t *testing.T) {
 	})
 
 	_, _, sc, _ := sidechain.DeploySideChain(sealer1, scClient, []common.Address{sealer1.From, sealer2.From}, 2)
-	mainchain.DeployMainChain(sealer2, mcClient, []common.Address{sealer1.From, sealer2.From}, 2)
+	_, _, mc, _ := mainchain.DeployMainChain(sealer2, mcClient, []common.Address{sealer1.From, sealer2.From}, 2)
 
 	tester1.Value = big.NewInt(200000000)
 	tx, _ := sc.Deposit(tester1, tester2.From)
@@ -247,18 +266,78 @@ func TestSideChainToMainChain(t *testing.T) {
 		scClient.Commit()
 	}
 
-	t.Run("SignatureAdded events are emitted on the sidechain", func(t *testing.T) {
-		var count int
-		iter, _ := sc.FilterSignatureAdded(&bind.FilterOpts{Start: 0, End: nil, Context: ctx})
-		for iter.Next() {
-			if iter.Event.TxHash == tx.Hash() {
-				count++
-			}
+	t.Run("HasEnoughSignaturesMC", func(t *testing.T) {
+		have, _ := HasEnoughSignaturesMC(ctx, sc, sealer1.From, tx.Hash())
+		want := true
+		if have != want {
+			t.Errorf("have = %v, want %v", have, want)
+		}
+	})
+
+	t.Run("GetTransactionMC returns the right signatures", func(t *testing.T) {
+		have, _ := sc.GetTransactionMC(&bind.CallOpts{Pending: false, From: sealer1.From, Context: ctx}, tx.Hash())
+		v1, r1, s1, _ := Sign(MsgHash(scAddr, sci.Event.Raw.TxHash, sci.Event.To, sci.Event.Value, []byte{}, 1), sealer1Key)
+		v2, r2, s2, _ := Sign(MsgHash(scAddr, sci.Event.Raw.TxHash, sci.Event.To, sci.Event.Value, []byte{}, 1), sealer2Key)
+		want := struct {
+			Destination common.Address
+			Value       *big.Int
+			Data        []byte
+			V           []uint8
+			R           [][32]byte
+			S           [][32]byte
+		}{
+			tester2.From,
+			tx.Value(),
+			[]byte{},
+			[]uint8{v1, v2},
+			[][32]byte{r1, r2},
+			[][32]byte{s1, s2},
 		}
 
-		have := count
-		want := 2
-		if have != want {
+		if !reflect.DeepEqual(have, want) {
+			t.Errorf("have = %v, want %v", have, want)
+		}
+	})
+
+	fci, _ := sc.FilterSignatureAdded(&bind.FilterOpts{Start: 0, End: nil, Context: ctx})
+	for fci.Next() {
+		enough, _ := HasEnoughSignaturesMC(ctx, sc, sealer1.From, fci.Event.TxHash)
+		if enough {
+			resp, _ := sc.GetTransactionMC(&bind.CallOpts{Pending: false, From: sealer1.From, Context: ctx}, fci.Event.TxHash)
+			scClient.Commit()
+			mc.SubmitTransaction(sealer1, fci.Event.TxHash, resp.Destination, resp.Value, resp.Data, resp.V, resp.R, resp.S)
+			mcClient.Commit()
+		}
+	}
+
+	t.Run("Sender has been debited on the sidechain", func(t *testing.T) {
+		have, _ := scClient.BalanceAt(ctx, tester1.From, nil)
+		want := big.NewInt(10000000000 - 200000000 - int64(tx.Gas()))
+		if !reflect.DeepEqual(have, want) {
+			t.Errorf("have = %v, want %v", have, want)
+		}
+	})
+
+	t.Run("Recipient has been credited on the mainchain", func(t *testing.T) {
+		have, _ := mcClient.BalanceAt(ctx, tester2.From, nil)
+		want := big.NewInt(10000000000 + 200000000)
+		if !reflect.DeepEqual(have, want) {
+			t.Errorf("have = %v, want %v", have, want)
+		}
+	})
+
+	t.Run("Main chain smart contract has been debited", func(t *testing.T) {
+		have, _ := mcClient.BalanceAt(ctx, mcAddr, nil)
+		want := big.NewInt(50000000000 - 200000000)
+		if !reflect.DeepEqual(have, want) {
+			t.Errorf("have = %v, want %v", have, want)
+		}
+	})
+
+	t.Run("Side chain smart contract has been credited", func(t *testing.T) {
+		have, _ := scClient.BalanceAt(ctx, scAddr, nil)
+		want := big.NewInt(50000000000 + 200000000)
+		if !reflect.DeepEqual(have, want) {
 			t.Errorf("have = %v, want %v", have, want)
 		}
 	})

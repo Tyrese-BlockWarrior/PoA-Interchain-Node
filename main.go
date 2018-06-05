@@ -22,7 +22,6 @@ package icn
 import (
 	"context"
 	"crypto/ecdsa"
-	"errors"
 	"math/big"
 
 	"github.com/WeTrustPlatform/interchain-node/bind/sidechain"
@@ -52,7 +51,7 @@ func MsgHash(
 		[]byte{0x19},
 		solsha3.Uint8(version),
 		solsha3.Address(contractAddress),
-		solsha3.Bytes32(string(txHash[:])),
+		solsha3.Bytes32(txHash[:]),
 		solsha3.Address(toAddress),
 		solsha3.Int256(value),
 		solsha3.String(data),
@@ -61,19 +60,6 @@ func MsgHash(
 	msgHash.SetBytes(hash)
 
 	return msgHash
-}
-
-// DepositInfo groups a DepositEvent and a Transaction to be processed
-type DepositInfo struct {
-	Event  DepositEvent
-	TxHash common.Hash
-}
-
-// DepositEvent is used in unpacking events
-type DepositEvent struct {
-	Sender   common.Address
-	Receiver common.Address
-	Value    *big.Int
 }
 
 // ParseSignature parses a ECDSA signature and returns v, r, s
@@ -94,20 +80,49 @@ func SubmitSignatureMC(
 	event *sidechain.SideChainDeposit,
 	key *ecdsa.PrivateKey,
 ) (*types.Transaction, error) {
-	// Create the message hash
 	var data []byte
 
+	// Create the message hash
 	msgHash := MsgHash(sideChainWalletAddress, event.Raw.TxHash, event.To, event.Value, data, 1)
 
-	// Sign the message hash
-	sig, err := crypto.Sign(msgHash.Bytes(), key)
+	v, r, s, err := Sign(msgHash, key)
 	if err != nil {
-		return nil, errors.New("Sign failed: " + err.Error())
+		return &types.Transaction{}, err
 	}
-
-	// Parse the signature
-	v, r, s := ParseSignature(sig)
 
 	// Submit the signature
 	return sc.SubmitSignatureMC(auth, event.Raw.TxHash, event.To, event.Value, data, v, r, s)
+}
+
+// Sign signs a msgHash and return the v r s signature
+func Sign(msgHash common.Hash, key *ecdsa.PrivateKey,
+) (v uint8, r, s common.Hash, err error) {
+	// Sign the message hash
+	sig, err := crypto.Sign(msgHash.Bytes(), key)
+	if err != nil {
+		return
+	}
+
+	// Parse the signature
+	v, r, s = ParseSignature(sig)
+
+	return
+}
+
+// HasEnoughSignaturesMC checks if a transaction got enough signature to be withdrawn on the main chain
+func HasEnoughSignaturesMC(ctx context.Context, sc *sidechain.SideChain, sealerAddr common.Address, txHash common.Hash) (bool, error) {
+	req, err := sc.Required(&bind.CallOpts{Pending: false, From: sealerAddr, Context: ctx})
+	if err != nil {
+		return false, err
+	}
+
+	var count uint8
+	iter, _ := sc.FilterSignatureAdded(&bind.FilterOpts{Start: 0, End: nil, Context: ctx})
+	for iter.Next() {
+		if iter.Event.TxHash == txHash {
+			count++
+		}
+	}
+
+	return req == count, nil
 }

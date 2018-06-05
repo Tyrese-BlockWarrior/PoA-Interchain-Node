@@ -106,6 +106,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	if opts.MainChain {
+		// Watch deposits on the main chain
 		wg.Add(1)
 		go func() {
 			mci, _ := mc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
@@ -118,12 +119,28 @@ func main() {
 	}
 
 	if opts.SideChain {
+		// Watch deposits on the side chain
 		wg.Add(1)
 		go func() {
 			sci, _ := sc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
 			for sci.Next() {
 				tx, err := icn.SubmitSignatureMC(ctx, sideChainWalletAddress, auth, sc, sci.Event, key.PrivateKey)
 				log.Println("[sc2mc]", sci.Event.Raw.BlockNumber, tx, err)
+			}
+			wg.Done()
+		}()
+
+		// Watch signature added on the side chain
+		wg.Add(1)
+		go func() {
+			fci, _ := sc.FilterSignatureAdded(&bind.FilterOpts{Start: 0, End: nil, Context: ctx})
+			for fci.Next() {
+				enough, _ := icn.HasEnoughSignaturesMC(ctx, sc, auth.From, fci.Event.TxHash)
+				if enough {
+					resp, _ := sc.GetTransactionMC(&bind.CallOpts{Pending: false, From: auth.From, Context: ctx}, fci.Event.TxHash)
+					tx, err := mc.SubmitTransaction(auth, fci.Event.TxHash, resp.Destination, resp.Value, resp.Data, resp.V, resp.R, resp.S)
+					log.Println("[sc2mc]", fci.Event.Raw.BlockNumber, tx, err)
+				}
 			}
 			wg.Done()
 		}()
