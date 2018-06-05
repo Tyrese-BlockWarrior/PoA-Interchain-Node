@@ -12,6 +12,16 @@ The interchain node allows ethereum users to transfer funds between a main chain
 
  * geth
  * bootnode
+ * eth-contract-address
+
+### GOPATH
+
+In your .bashrc:
+
+```
+export GOPATH="$HOME/go"
+export PATH="$GOPATH/bin:$PATH"
+```
 
 ### Setup dependencies on OSX:
 
@@ -19,6 +29,8 @@ The interchain node allows ethereum users to transfer funds between a main chain
 brew tap ethereum/ethereum
 brew install ethereum
 brew install solidity
+go get github.com/kivutar/eth-contract-address
+go install github.com/kivutar/eth-contract-address
 ```
 
 `abigen` is supposed to be provided by the ethereum brew package on OSX. For some reasons, the installation of abigen doesn't always happen. (But it does install properly in Travis CI)
@@ -41,6 +53,8 @@ But as the repo is still private, you will have to clone the repo directly in yo
     cd $GOPATH/src/github.com/WeTrustPlatform/
     git clone --recurse-submodules git@github.com:WeTrustPlatform/interchain-node.git
     cd interchain-node
+    go generate ./...
+    go get -t -v ./...
 
 ## Run the test suite
 
