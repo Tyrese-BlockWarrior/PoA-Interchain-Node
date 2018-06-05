@@ -21,16 +21,25 @@ brew install ethereum
 brew install solidity
 ```
 
+`abigen` is supposed to be provided by the ethereum brew package on OSX. For some reasons, the installation of abigen doesn't always happen. (But it does install properly in Travis CI)
+You may have to build it from source:
+
+```
+go get github.com/ethereum/go-ethereum
+cd $GOPATH/src/github.com/ethereum/go-ethereum/cmd/abigen/
+go build
+sudo cp abigen /usr/local/bin/abigen
+```
+
 ## Getting the source code
 
     go get github.com/WeTrustPlatform/interchain-node
 
 But as the repo is still private, you will have to clone the repo directly in your go path:
 
-    cd $GOPATH
-    mkdir -p src/github.com/WeTrustPlatform/
-    cd src/github.com/WeTrustPlatform/
-    git clone git@github.com:WeTrustPlatform/interchain-node.git
+    mkdir -p $GOPATH/src/github.com/WeTrustPlatform/
+    cd $GOPATH/src/github.com/WeTrustPlatform/
+    git clone --recurse-submodules git@github.com:WeTrustPlatform/interchain-node.git
     cd interchain-node
 
 ## Run the test suite
@@ -38,6 +47,10 @@ But as the repo is still private, you will have to clone the repo directly in yo
     go test -cover -v ./...
 
 ## Run the development environment
+
+The interchain node comes with a helper in the form of a Makefile. This Makefile is not required to build the interchain node and use it. It is there to test the interchain node with the real geth. It will setup 3 instances of geth, 2 chains, and a few test accounts.
+
+If you don't need to test the interchain node on geth, please skip all of the following steps and rely on the test suite only.
 
 In 3 separate terminals:
 
@@ -52,30 +65,6 @@ Wait 10 seconds between each call
 ## Deploy the multisig wallet on both chains
 
     make mainchain_wallet sidechain_wallet
-
-## Run the interchain node
-
-For each sealer, run the interchain node:
-
-    go run cmd/icn/main.go -k sidechain/keystore/<sealer_key_json> --mainchainendpoint=mainchain/geth.ipc --sidechainendpoint=sidechain/geth.ipc -p dummy --mainchainwallet=`cat mainchain/wallet` --sidechainwallet=`cat sidechain/wallet`
-
-```
-Usage:
-  main [OPTIONS]
-
-Application Options:
-  -m, --mainchain          Watch the main chain
-  -s, --sidechain          Watch the side chain
-  -k, --keyjson=           Path to the JSON private key file of the sealer
-  -p, --password=          Passphrase needed to unlock the sealer's JSON key
-      --mainchainendpoint= URL or path of the main chain endpoint
-      --sidechainendpoint= URL or path of the side chain endpoint
-      --mainchainwallet=   Ethereum address of the multisig wallet on the main chain
-      --sidechainwallet=   Ethereum address of the multisig wallet on the side chain
-
-Help Options:
-  -h, --help               Show this help message
-```
 
 ## Sending ether to arbitrary addresses offchain
 
@@ -107,3 +96,27 @@ Usage:
 ```
 
 The interchain node will notice your call and mirror the transaction on the other chain.
+
+## Run the interchain node
+
+For each sealer, run the interchain node:
+
+    go run cmd/icn/main.go -k sidechain/keystore/<sealer_key_json> --mainchainendpoint=mainchain/geth.ipc --sidechainendpoint=sidechain/geth.ipc -p dummy --mainchainwallet=`cat mainchain/wallet` --sidechainwallet=`cat sidechain/wallet`
+
+```
+Usage:
+  main [OPTIONS]
+
+Application Options:
+  -m, --mainchain          Watch the main chain
+  -s, --sidechain          Watch the side chain
+  -k, --keyjson=           Path to the JSON private key file of the sealer
+  -p, --password=          Passphrase needed to unlock the sealer's JSON key
+      --mainchainendpoint= URL or path of the main chain endpoint
+      --sidechainendpoint= URL or path of the side chain endpoint
+      --mainchainwallet=   Ethereum address of the multisig wallet on the main chain
+      --sidechainwallet=   Ethereum address of the multisig wallet on the side chain
+
+Help Options:
+  -h, --help               Show this help message
+```
