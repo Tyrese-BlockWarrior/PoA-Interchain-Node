@@ -86,27 +86,26 @@ Our multisig wallets have a function called `deposit` which allows you to transf
 
 Instead of paying to the wallet address, you call the `deposit` method using the geth console or our utility program `icn-deposit.go`:
 
-    go run cmd/icn-deposit/main.go -mainchain -keyjson=mainchain/keystore/<your_key_json> -password=dummy -endpoint=mainchain/geth.ipc -wallet=`cat mainchain/wallet` -receiver=`cat sidechain/sealer` -value="25000000000000000000"
+    go run cmd/icn-deposit/main.go --mainchain --keyjson=mainchain/keystore/<your_key_json> --password="dummy" --endpoint=mainchain/geth.ipc --wallet=`cat mainchain/wallet` --receiver=`cat sidechain/sealer` --value="25000000000000000000"
 
 Usage:
 
 ```
-  -endpoint string
-    	URL or path of the origin chain endpoint
-  -keyjson string
-    	Path to the JSON private key file of the user
-  -mainchain
-    	Target the main chain wallet
-  -password string
-    	Passphrase needed to unlock the user's JSON key
-  -receiver string
-    	Ethereum address of the receiver on the target chain
-  -sidechain
-    	Target the side chain wallet
-  -value string
-    	Value (wei) to transfer to the receiver
-  -wallet string
-    	Ethereum address of the multisig wallet on the origin chain
+Usage:
+  main [OPTIONS]
+
+Application Options:
+  -m, --mainchain  Target the main chain wallet
+  -s, --sidechain  Target the side chain wallet
+  -k, --keyjson=   Path to the JSON private key file of the sealer
+  -p, --password=  Passphrase needed to unlock the sealer's JSON key
+  -e, --endpoint=  URL or path of the origin chain endpoint
+  -w, --wallet=    Ethereum address of the multisig wallet on the origin chain
+  -r, --receiver=  Ethereum address of the receiver on the target chain
+  -v, --value=     Value (wei) to transfer to the receiver
+
+Help Options:
+  -h, --help       Show this help message
 ```
 
 The interchain node will notice your call and mirror the transaction on the other chain.

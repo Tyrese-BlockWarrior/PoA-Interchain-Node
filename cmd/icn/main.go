@@ -28,6 +28,7 @@ import (
 	"os"
 	"sync"
 	"time"
+	"strings"
 
 	"github.com/WeTrustPlatform/interchain-node"
 	"github.com/WeTrustPlatform/interchain-node/bind/mainchain"
@@ -68,6 +69,7 @@ func main() {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Print("Enter your passphrase: ")
 		opts.Password, _ = reader.ReadString('\n')
+		opts.Password = strings.TrimSuffix(opts.Password, "\n")
 	}
 
 	// Default behavior is to watch both chains
