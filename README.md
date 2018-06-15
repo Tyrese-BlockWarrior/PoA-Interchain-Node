@@ -1,4 +1,4 @@
-# PoA Interchain Node [![Build Status](https://travis-ci.com/WeTrustPlatform/interchain-node.svg?token=zZKDmgBA4AupAdRbvfQN&branch=master)](https://travis-ci.com/WeTrustPlatform/interchain-node)
+# PoA Interchain Node [![Build Status](https://travis-ci.com/WeTrustPlatform/poa-interchain-node.svg?token=52dbeJVrfqXvGhWfS1U6&branch=develop)](https://travis-ci.com/WeTrustPlatform/poa-interchain-node)
 
 The PoA Interchain Node allows ethereum users to transfer funds between a main chain and a PoA side chain using multisig wallets.
 
