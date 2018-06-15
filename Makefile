@@ -3,10 +3,10 @@
 
 # generate the go bindings for the multisig wallets
 bind/mainchain/main.go bind/sidechain/main.go:
-	mkdir -p ../bind/mainchain/
-	mkdir -p ../bind/sidechain/
-	abigen --sol ../interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out ../bind/mainchain/main.go
-	abigen --sol ../interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out ../bind/sidechain/main.go
+	mkdir -p bind/mainchain/
+	mkdir -p bind/sidechain/
+	abigen --sol interchain-node-contracts/contracts/MainChain.sol --pkg mainchain --out bind/mainchain/main.go
+	abigen --sol interchain-node-contracts/contracts/SideChain.sol --pkg sidechain --out bind/sidechain/main.go
 
 # we use the same passphrase for every account in the dev env
 password.txt:
@@ -83,11 +83,11 @@ run_sidechain2: sidechain2/geth/nodekey sidechain/enode sidechain2/static-nodes.
 
 # deploy the multisig wallet on the mainchain
 mainchain_wallet: bind/mainchain/main.go bind/sidechain/main.go sidechain/sealer sidechain2/sealer
-	go run ../cmd/icn-deploy/main.go --mainchain --rpc=mainchain/geth.ipc --keyjson=mainchain/keystore/`ls -1 mainchain/keystore | head -n 1` --addresses="`cat sidechain/sealer`,`cat sidechain2/sealer`" --required=2 --password="dummy"
+	go run cmd/icn-deploy/main.go --mainchain --rpc=mainchain/geth.ipc --keyjson=mainchain/keystore/`ls -1 mainchain/keystore | head -n 1` --addresses="`cat sidechain/sealer`,`cat sidechain2/sealer`" --required=2 --password="dummy"
 
 # deploy the multisig wallet on the sidechain
 sidechain_wallet: bind/mainchain/main.go bind/sidechain/main.go sidechain/sealer sidechain2/sealer
-	go run ../cmd/icn-deploy/main.go --sidechain --rpc=sidechain/geth.ipc --keyjson=sidechain/keystore/`ls -1 sidechain/keystore | head -n 1` --addresses="`cat sidechain/sealer`,`cat sidechain2/sealer`" --required=2 --password="dummy"
+	go run cmd/icn-deploy/main.go --sidechain --rpc=sidechain/geth.ipc --keyjson=sidechain/keystore/`ls -1 sidechain/keystore | head -n 1` --addresses="`cat sidechain/sealer`,`cat sidechain2/sealer`" --required=2 --password="dummy"
 
 clean:
-	rm -rf mainchain sidechain sidechain2 password.txt ../bind/*
+	rm -rf mainchain sidechain sidechain2 password.txt contracts/*.bin contracts/*.abi bind/*
