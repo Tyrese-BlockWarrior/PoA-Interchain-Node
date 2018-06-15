@@ -45,13 +45,13 @@ sudo cp abigen /usr/local/bin/abigen
 
 ## Getting the source code
 
-    go get github.com/WeTrustPlatform/interchain-node
+    go get github.com/WeTrustPlatform/poa-interchain-node
 
 But as the repo is still private, you will have to clone the repo directly in your go path:
 
     mkdir -p $GOPATH/src/github.com/WeTrustPlatform/
     cd $GOPATH/src/github.com/WeTrustPlatform/
-    git clone --recurse-submodules git@github.com:WeTrustPlatform/interchain-node.git
+    git clone --recurse-submodules git@github.com:WeTrustPlatform/poa-interchain-node.git
     cd interchain-node
     go generate ./...
     go get -t -v ./...
