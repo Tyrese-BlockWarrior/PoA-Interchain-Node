@@ -69,6 +69,7 @@ If you don't need to test the interchain node on geth, please skip all of the fo
 In 3 separate terminals:
 
 ```
+cd dev/
 make run_mainchain
 make run_sidechain
 make run_sidechain2
@@ -86,7 +87,7 @@ Our multisig wallets have a function called `deposit` which allows you to transf
 
 Instead of paying to the wallet address, you call the `deposit` method using the geth console or our utility program `icn-deposit.go`:
 
-    go run cmd/icn-deposit/main.go --mainchain --keyjson=mainchain/keystore/<your_key_json> --password="dummy" --endpoint=mainchain/geth.ipc --wallet=`cat mainchain/wallet` --receiver=`cat sidechain/sealer` --value="25000000000000000000"
+    go run ../cmd/icn-deposit/main.go --mainchain --keyjson=mainchain/keystore/<your_key_json> --password="dummy" --endpoint=mainchain/geth.ipc --wallet=`cat mainchain/wallet` --receiver=`cat sidechain/sealer` --value="25000000000000000000"
 
 Usage:
 
@@ -114,7 +115,7 @@ The interchain node will notice your call and mirror the transaction on the othe
 
 For each sealer, run the interchain node:
 
-    go run cmd/icn/main.go -k sidechain/keystore/<sealer_key_json> --mainchainendpoint=mainchain/geth.ipc --sidechainendpoint=sidechain/geth.ipc -p dummy --mainchainwallet=`cat mainchain/wallet` --sidechainwallet=`cat sidechain/wallet`
+    go run ../cmd/icn/main.go -k sidechain/keystore/<sealer_key_json> --mainchainendpoint=mainchain/geth.ipc --sidechainendpoint=sidechain/geth.ipc -p dummy --mainchainwallet=`cat mainchain/wallet` --sidechainwallet=`cat sidechain/wallet`
 
 ```
 Usage:
