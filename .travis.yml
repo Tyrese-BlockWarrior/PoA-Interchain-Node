@@ -1,3 +1,5 @@
+sudo: false
+
 branches:
   only:
     - master
@@ -12,6 +14,11 @@ go:
 os:
   - linux
 #  - osx
+
+install: true
+
+git:
+  depth: 1
 
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then sudo add-apt-repository ppa:ethereum/ethereum -y; fi

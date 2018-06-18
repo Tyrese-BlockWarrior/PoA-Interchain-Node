@@ -1,5 +1,5 @@
-mainchain/
-sidechain/
-sidechain2/
+dev/mainchain/
+dev/sidechain/
+dev/sidechain2/
+dev/password.txt
 bind/
-password.txt
