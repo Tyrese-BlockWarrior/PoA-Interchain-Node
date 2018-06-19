@@ -22,8 +22,11 @@ package icn
 import (
 	"context"
 	"crypto/ecdsa"
+	"log"
 	"math/big"
+	"sync"
 
+	"github.com/WeTrustPlatform/poa-interchain-node/bind/mainchain"
 	"github.com/WeTrustPlatform/poa-interchain-node/bind/sidechain"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -125,4 +128,51 @@ func HasEnoughSignaturesMC(ctx context.Context, sc *sidechain.SideChain, sealerA
 	}
 
 	return req == count, nil
+}
+
+// ProcessMCDeposits watches the main chain and for each Deposit calls SubmitTransactionSC on the side chain
+func ProcessMCDeposits(ctx context.Context, auth *bind.TransactOpts,
+	mc *mainchain.MainChain, sc *sidechain.SideChain, wg *sync.WaitGroup) {
+	i, _ := mc.FilterDeposit(&bind.FilterOpts{
+		Start:   0,
+		End:     nil,
+		Context: ctx,
+	}, []common.Address{}, []common.Address{})
+	for i.Next() {
+		tx, err := sc.SubmitTransactionSC(auth, i.Event.Raw.TxHash, i.Event.To, i.Event.Value, []byte{})
+		log.Println("[mc2sc]", i.Event.Raw.BlockNumber, tx, err)
+	}
+	wg.Done()
+}
+
+// ProcessSCDeposits watches the side chain and for each Deposit calls SubmitSignatureMC on the side chain
+func ProcessSCDeposits(ctx context.Context, auth *bind.TransactOpts,
+	mc *mainchain.MainChain, sc *sidechain.SideChain,
+	addr common.Address, key *ecdsa.PrivateKey, wg *sync.WaitGroup) {
+	i, _ := sc.FilterDeposit(&bind.FilterOpts{
+		Start:   0,
+		End:     nil,
+		Context: ctx,
+	}, []common.Address{}, []common.Address{})
+	for i.Next() {
+		tx, err := SubmitSignatureMC(ctx, addr, auth, sc, i.Event, key)
+		log.Println("[sc2mc]", i.Event.Raw.BlockNumber, tx, err)
+	}
+	wg.Done()
+}
+
+// ProcessSCSignatureAdded watches the side chain and for each SignatureAdded calls SubmitTransaction on the main chain
+func ProcessSCSignatureAdded(ctx context.Context, auth *bind.TransactOpts,
+	mc *mainchain.MainChain, sc *sidechain.SideChain,
+	wg *sync.WaitGroup) {
+	i, _ := sc.FilterSignatureAdded(&bind.FilterOpts{Start: 0, End: nil, Context: ctx})
+	for i.Next() {
+		enough, _ := HasEnoughSignaturesMC(ctx, sc, auth.From, i.Event.TxHash)
+		if enough {
+			resp, _ := sc.GetTransactionMC(&bind.CallOpts{Pending: false, From: auth.From, Context: ctx}, i.Event.TxHash)
+			tx, err := mc.SubmitTransaction(auth, i.Event.TxHash, resp.Destination, resp.Value, resp.Data, resp.V, resp.R, resp.S)
+			log.Println("[sc2mc]", i.Event.Raw.BlockNumber, tx, err)
+		}
+	}
+	wg.Done()
 }

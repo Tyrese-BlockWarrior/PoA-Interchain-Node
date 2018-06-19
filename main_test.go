@@ -23,6 +23,7 @@ import (
 	"context"
 	"math/big"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/WeTrustPlatform/poa-interchain-node/bind/mainchain"
@@ -166,13 +167,12 @@ func TestMainChainToSideChain(t *testing.T) {
 	tx, _ := mc.Deposit(tester2, tester1.From)
 	mcClient.Commit()
 
-	mci, _ := mc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
-	for mci.Next() {
-		sc.SubmitTransactionSC(sealer1Auth, mci.Event.Raw.TxHash, mci.Event.To, mci.Event.Value, []byte{})
-		scClient.Commit()
-		sc.SubmitTransactionSC(sealer2Auth, mci.Event.Raw.TxHash, mci.Event.To, mci.Event.Value, []byte{})
-		scClient.Commit()
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go ProcessMCDeposits(ctx, sealer1Auth, mc, sc, &wg)
+	go ProcessMCDeposits(ctx, sealer2Auth, mc, sc, &wg)
+	wg.Wait()
+	scClient.Commit()
 
 	t.Run("Transaction is confirmed after the number of required votes on the SC is reached", func(t *testing.T) {
 		confirmed, _ := sc.IsConfirmed(&bind.CallOpts{
@@ -258,13 +258,12 @@ func TestSideChainToMainChain(t *testing.T) {
 	tx, _ := sc.Deposit(tester1, tester2.From)
 	scClient.Commit()
 
-	sci, _ := sc.FilterDeposit(&bind.FilterOpts{Start: 0, End: nil, Context: ctx}, []common.Address{}, []common.Address{})
-	for sci.Next() {
-		SubmitSignatureMC(ctx, scAddr, sealer1Auth, sc, sci.Event, sealer1Key)
-		scClient.Commit()
-		SubmitSignatureMC(ctx, scAddr, sealer2Auth, sc, sci.Event, sealer2Key)
-		scClient.Commit()
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go ProcessSCDeposits(ctx, sealer1Auth, mc, sc, scAddr, sealer1Key, &wg)
+	go ProcessSCDeposits(ctx, sealer2Auth, mc, sc, scAddr, sealer2Key, &wg)
+	wg.Wait()
+	scClient.Commit()
 
 	t.Run("HasEnoughSignaturesMC", func(t *testing.T) {
 		have, _ := HasEnoughSignaturesMC(ctx, sc, sealer1.From, tx.Hash())
@@ -274,41 +273,10 @@ func TestSideChainToMainChain(t *testing.T) {
 		}
 	})
 
-	t.Run("GetTransactionMC returns the right signatures", func(t *testing.T) {
-		have, _ := sc.GetTransactionMC(&bind.CallOpts{Pending: false, From: sealer1.From, Context: ctx}, tx.Hash())
-		v1, r1, s1, _ := Sign(MsgHash(scAddr, sci.Event.Raw.TxHash, sci.Event.To, sci.Event.Value, []byte{}, 1), sealer1Key)
-		v2, r2, s2, _ := Sign(MsgHash(scAddr, sci.Event.Raw.TxHash, sci.Event.To, sci.Event.Value, []byte{}, 1), sealer2Key)
-		want := struct {
-			Destination common.Address
-			Value       *big.Int
-			Data        []byte
-			V           []uint8
-			R           [][32]byte
-			S           [][32]byte
-		}{
-			tester2.From,
-			tx.Value(),
-			[]byte{},
-			[]uint8{v1, v2},
-			[][32]byte{r1, r2},
-			[][32]byte{s1, s2},
-		}
-
-		if !reflect.DeepEqual(have, want) {
-			t.Errorf("have = %v, want %v", have, want)
-		}
-	})
-
-	fci, _ := sc.FilterSignatureAdded(&bind.FilterOpts{Start: 0, End: nil, Context: ctx})
-	for fci.Next() {
-		enough, _ := HasEnoughSignaturesMC(ctx, sc, sealer1.From, fci.Event.TxHash)
-		if enough {
-			resp, _ := sc.GetTransactionMC(&bind.CallOpts{Pending: false, From: sealer1.From, Context: ctx}, fci.Event.TxHash)
-			scClient.Commit()
-			mc.SubmitTransaction(sealer1, fci.Event.TxHash, resp.Destination, resp.Value, resp.Data, resp.V, resp.R, resp.S)
-			mcClient.Commit()
-		}
-	}
+	wg.Add(1)
+	go ProcessSCSignatureAdded(ctx, sealer1Auth, mc, sc, &wg)
+	wg.Wait()
+	mcClient.Commit()
 
 	t.Run("Sender has been debited on the sidechain", func(t *testing.T) {
 		have, _ := scClient.BalanceAt(ctx, tester1.From, nil)
