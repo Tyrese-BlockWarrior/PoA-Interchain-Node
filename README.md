@@ -115,7 +115,9 @@ The interchain node will notice your call and mirror the transaction on the othe
 
 For each sealer, run the interchain node:
 
-    go run ../cmd/icn/main.go -k sidechain/keystore/<sealer_key_json> --mainchainendpoint=mainchain/geth.ipc --sidechainendpoint=sidechain/geth.ipc -p dummy --mainchainwallet=`cat mainchain/wallet` --sidechainwallet=`cat sidechain/wallet`
+    go run ../cmd/icn/main.go -k sidechain/keystore/<sealer1_key_json> --mainchainendpoint=mainchain/geth.ipc --sidechainendpoint=sidechain/geth.ipc -p dummy --mainchainwallet=`cat mainchain/wallet` --sidechainwallet=`cat sidechain/wallet` -d=sealer1db
+
+    go run ../cmd/icn/main.go -k sidechain2/keystore/<sealer2_key_json> --mainchainendpoint=mainchain/geth.ipc --sidechainendpoint=sidechain2/geth.ipc -p dummy --mainchainwallet=`cat mainchain/wallet` --sidechainwallet=`cat sidechain/wallet` -d=sealer2db
 
 ```
 Usage:

@@ -22,8 +22,11 @@ package icn
 import (
 	"context"
 	"crypto/ecdsa"
+	"io/ioutil"
 	"log"
 	"math/big"
+	"os"
+	"strconv"
 	"sync"
 
 	"github.com/WeTrustPlatform/poa-interchain-node/bind/mainchain"
@@ -132,15 +135,17 @@ func HasEnoughSignaturesMC(ctx context.Context, sc *sidechain.SideChain, sealerA
 
 // ProcessMCDeposits watches the main chain and for each Deposit calls SubmitTransactionSC on the side chain
 func ProcessMCDeposits(ctx context.Context, auth *bind.TransactOpts,
-	mc *mainchain.MainChain, sc *sidechain.SideChain, wg *sync.WaitGroup) {
+	mc *mainchain.MainChain, sc *sidechain.SideChain,
+	dbPath string, start uint64, end *uint64, wg *sync.WaitGroup) {
 	i, _ := mc.FilterDeposit(&bind.FilterOpts{
-		Start:   0,
-		End:     nil,
+		Start:   start,
+		End:     end,
 		Context: ctx,
 	}, []common.Address{}, []common.Address{})
 	for i.Next() {
 		tx, err := sc.SubmitTransactionSC(auth, i.Event.Raw.TxHash, i.Event.To, i.Event.Value, []byte{})
 		log.Println("[mc2sc]", i.Event.Raw.BlockNumber, tx, err)
+		PersistLastBlock(dbPath, "MCDeposit", i.Event.Raw.BlockNumber)
 	}
 	wg.Done()
 }
@@ -148,15 +153,17 @@ func ProcessMCDeposits(ctx context.Context, auth *bind.TransactOpts,
 // ProcessSCDeposits watches the side chain and for each Deposit calls SubmitSignatureMC on the side chain
 func ProcessSCDeposits(ctx context.Context, auth *bind.TransactOpts,
 	mc *mainchain.MainChain, sc *sidechain.SideChain,
-	addr common.Address, key *ecdsa.PrivateKey, wg *sync.WaitGroup) {
+	addr common.Address, key *ecdsa.PrivateKey,
+	dbPath string, start uint64, end *uint64, wg *sync.WaitGroup) {
 	i, _ := sc.FilterDeposit(&bind.FilterOpts{
-		Start:   0,
-		End:     nil,
+		Start:   start,
+		End:     end,
 		Context: ctx,
 	}, []common.Address{}, []common.Address{})
 	for i.Next() {
 		tx, err := SubmitSignatureMC(ctx, addr, auth, sc, i.Event, key)
 		log.Println("[sc2mc]", i.Event.Raw.BlockNumber, tx, err)
+		PersistLastBlock(dbPath, "SCDeposit", i.Event.Raw.BlockNumber)
 	}
 	wg.Done()
 }
@@ -164,15 +171,67 @@ func ProcessSCDeposits(ctx context.Context, auth *bind.TransactOpts,
 // ProcessSCSignatureAdded watches the side chain and for each SignatureAdded calls SubmitTransaction on the main chain
 func ProcessSCSignatureAdded(ctx context.Context, auth *bind.TransactOpts,
 	mc *mainchain.MainChain, sc *sidechain.SideChain,
-	wg *sync.WaitGroup) {
-	i, _ := sc.FilterSignatureAdded(&bind.FilterOpts{Start: 0, End: nil, Context: ctx})
+	dbPath string, start uint64, end *uint64, wg *sync.WaitGroup) {
+	i, _ := sc.FilterSignatureAdded(&bind.FilterOpts{
+		Start:   start,
+		End:     end,
+		Context: ctx,
+	})
 	for i.Next() {
 		enough, _ := HasEnoughSignaturesMC(ctx, sc, auth.From, i.Event.TxHash)
 		if enough {
 			resp, _ := sc.GetTransactionMC(&bind.CallOpts{Pending: false, From: auth.From, Context: ctx}, i.Event.TxHash)
 			tx, err := mc.SubmitTransaction(auth, i.Event.TxHash, resp.Destination, resp.Value, resp.Data, resp.V, resp.R, resp.S)
 			log.Println("[sc2mc]", i.Event.Raw.BlockNumber, tx, err)
+			PersistLastBlock(dbPath, "SCSignatureAdded", i.Event.Raw.BlockNumber)
 		}
 	}
 	wg.Done()
+}
+
+func handleFatal(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+// PersistLastBlock saves the last processed block to a file
+func PersistLastBlock(dbPath string, eventType string, blockNumber uint64) {
+	f, err := os.Create(dbPath + "/" + eventType)
+	handleFatal(err)
+	defer f.Close()
+	_, err = f.WriteString(strconv.FormatUint(blockNumber, 10))
+	handleFatal(err)
+	err = f.Sync()
+	handleFatal(err)
+}
+
+// GetLastProcessedBlock returns the last processed block number from a file
+func GetLastProcessedBlock(dbPath string, eventType string) uint64 {
+	// Create the file if it doesn't exist
+	f, err := os.OpenFile(dbPath+"/"+eventType, os.O_CREATE, os.ModePerm)
+	handleFatal(err)
+	f.Close()
+	// Read the whole file
+	c, err := ioutil.ReadFile(dbPath + "/" + eventType)
+	handleFatal(err)
+	if len(c) == 0 {
+		return 0
+	}
+	// Parse it to uint64
+	blockNumber, err := strconv.ParseUint(string(c[:]), 10, 64)
+	handleFatal(err)
+	return blockNumber
+}
+
+// EndBlock calculates the last block to process
+func EndBlock(start uint64, nblocks uint64) *uint64 {
+	var end *uint64
+	if nblocks > 0 {
+		e := start + nblocks
+		end = &e
+	} else {
+		end = nil
+	}
+	return end
 }
