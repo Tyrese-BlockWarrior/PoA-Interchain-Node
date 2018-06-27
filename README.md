@@ -52,7 +52,7 @@ But as the repo is still private, you will have to clone the repo directly in yo
     mkdir -p $GOPATH/src/github.com/WeTrustPlatform/
     cd $GOPATH/src/github.com/WeTrustPlatform/
     git clone --recurse-submodules git@github.com:WeTrustPlatform/poa-interchain-node.git
-    cd interchain-node
+    cd poa-interchain-node
     go generate ./...
     go get -t -v ./...
 
